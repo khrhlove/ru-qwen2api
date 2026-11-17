@@ -194,6 +194,35 @@ ufw allow from 172.30.38.0/24 to any port 8790 proto tcp
 
 实测（容器内 `wget --post-file`）：返回 `{"content":"收到"}`，端到端打通。
 
+## 端到端验证（ai-prod，2026-11-17 23:30）
+
+| 测试 | 结果 |
+|---|---|
+| bridge 非流式（容器内 `wget` → 172.30.38.1:8790） | ✅ `{"content":"收到"}` |
+| bridge 流式（宿主机 curl） | ✅ 13.1s / 6 帧 / 正常 `[DONE]` |
+| qwen2api 网关非流式（127.0.0.1:39201） | ✅ 3.73s，带真实 usage（prompt 1885 / cached 512） |
+| qwen2api 网关流式（qwen2api.1task.cn） | ✅ 5.82s，role → content → stop 完整 |
+
+**结论**：bridge 与网关各自健康、网络连通（容器可直达 bridge）。但两者目前**互相独立**——网关仍走自己的直连通道，没有自动 fallback 到 bridge。
+
+### 接入网关为什么不能只改配置
+
+qwen2api 走的是 **qwen 原生协议**：
+1. `POST /api/v2/chats/new` 建会话
+2. `POST /api/v2/chat/completions?chat_id=` 打开 SSE（`response.created` / `response.output_text.delta` 等事件）
+3. 另有 files 上传、history 回捞
+
+而 bridge 提供的是 **OpenAI 风格 `/v1/chat/completions`**。协议不同，把 `upstream.base_url` 指过来不会工作。
+
+两条可行路径：
+
+| 路径 | 改动 | 风险 |
+|---|---|---|
+| A. bridge 增加 qwen 原生协议兼容层（`/api/v2/chats/new` + 对应 SSE 事件） | 只改 Python | 低（Go 代码不动），应急时改 `base_url` 即可切换 |
+| B. Go 侧在 `handleChat` 的风控分支里加 bridge 调用 | 改生产核心路径 | 高（需改路由与错误处理，测试面大） |
+
+推荐 A：让 bridge 冒充上游，网关零改动即可切换。
+
 ## 文件
 
 - `bridge.py` — 服务本体（含 SSE 流式与多 worker）
