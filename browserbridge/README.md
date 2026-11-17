@@ -241,6 +241,39 @@ ufw allow from 172.30.38.0/24 to any port 8790 proto tcp
 
 实测（容器内 `wget --post-file`）：返回 `{"content":"收到"}`，端到端打通。
 
+## Worker 上限：不能无限扩（2026-11-18 00:00 实测）
+
+| WORKERS | 登录 | 压测结果 | 结论 |
+|---|---|---|---|
+| 3 | 3/3 | RPM **15.9**，9/9 | 稳定 |
+| 5 | 5/5 | RPM **18-20**，12/12 | **甜点** |
+| 10 | 10/10 全部登录成功 | **6/20 超时 504** | 崩 |
+
+**10 个失败的原因不是账号或 CPU**：
+
+```
+[worker2] retry after TimeoutError Locator.click: Timeout 90000ms exceeded.
+  - waiting for locator("[aria-label="Select Model"]").first
+  - locator resolved to           ← 元素存在，但点不动
+```
+
+CPU 只用了 10 核左右（服务器 64 核），内存 22G/47G。是**单机无 GPU 环境下 10 个 Chrome 同时渲染**，Playwright 的可交互性检查等不到元素稳定。
+
+**更严重的后果**：10 个账号同时登录 + 连打 20 个请求之后，`/auth` 直接返回阿里 WAF 挑战页：
+
+```html
+<meta name="aliyun_waf_aa" content="...">   ← 整站被挑战
+```
+
+之后所有 worker 登录都超时（`wait_for_selector` 等不到邮箱框），bridge 完全不可用。**要冷却一段时间才能恢复。**
+
+### 结论
+
+- **单机上限 5 个**（RPM 18-20），10 个会同时打爆浏览器渲染和 IP 风控
+- **账号数不是约束**（3135 个足够），**IP 和单机渲染才是**
+- 要更高吞吐只能**加机器**（每台 5 个），不能加 worker
+- **不要再对同一 IP 做扩容压力测试** —— 一次 10 并发的代价是整站被 WAF 挑战，恢复要等冷却
+
 ## 吞吐优化：RPM 从 5 提升到 20（2026-11-17 23:40）
 
 压测脚本 `bench_rpm.py`（固定并发跑 N 个请求，统计墙钟/成功率/分位耗时）。
