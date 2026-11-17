@@ -1,0 +1,200 @@
+{
+  "success": true,
+  "request_id": "678dca6f-b730-49f8-918d-63440f74e543",
+  "data": {
+    "data": [
+      {
+        "id": "qwen4-max",
+        "name": "Qwen4-Max",
+        "object": "model",
+        "owned_by": "qwen",
+        "info": {
+          "id": "qwen4-max",
+          "name": "Qwen4-Max",
+          "user_id": "4a8cd1c0-a7f6-4cfa-b5dd-d6bdab408271",
+          "base_model_id": null,
+          "access_control": null,
+          "is_active": true,
+          "is_visitor_active": false,
+          "meta": {
+            "profile_image_url": "/static/favicon.png",
+            "description": "Qwen迄今最强模型，2.4 万亿参数、原生视觉与百万上下文，擅长专业任务与创意制作，持续推进复杂项目直至交付。",
+            "short_description": "Qwen4-Max",
+            "capabilities": {
+              "vision": true,
+              "video": true,
+              "thinking": true
+            },
+            "abilities": {
+              "vision": 1,
+              "video": 1,
+              "thinking": 3
+            },
+            "auto_thinking": false,
+            "reasoning_efforts": [
+              "low",
+              "high",
+              "xhigh"
+            ],
+            "default_reasoning_effort": "high",
+            "max_context_length": 1000000,
+            "chat_type": [
+              "agent_mode"
+            ],
+            "modality": [
+              "text",
+              "image",
+              "video"
+            ],
+            "credit_multiplier": 0.5,
+            "pricing_description": "按实际使用量消耗共享积分。",
+            "badges": [
+              "NEW"
+            ],
+            "reasoning_effort_access": {
+              "xhigh": {
+                "badge": "VIP",
+                "required_membership": "paid"
+              }
+            }
+          },
+          "created_at": 1732711466,
+          "updated_at": 1732711466
+        },
+        "preset": true,
+        "action_ids": []
+      },
+      {
+        "id": "qwen3.8-max",
+        "name": "Qwen3.8-Max",
+        "object": "model",
+        "owned_by": "qwen",
+        "info": {
+          "id": "qwen3.8-max",
+          "user_id": "4a8cd1c0-a7f6-4cfa-b5dd-d6bdab408271",
+          "base_model_id": null,
+          "name": "Qwen3.8-Max",
+          "meta": {
+            "profile_image_url": "/static/favicon.png",
+            "description": "Qwen基座模型，2.4 万亿参数，在代码工程、专业办公、深度推理等核心场景表现出色。",
+            "capabilities": {
+              "vision": true,
+              "document": true,
+              "video": true,
+              "audio": true,
+              "thinking": true,
+              "search": true
+            },
+            "short_description": "Qwen3.8 模型的旗舰产品，提供业界领先的性能。",
+            "max_context_length": 1000000,
+            "max_summary_generation_length": 131072,
+            "abilities": {
+              "vision": 1,
+              "document": 1,
+              "video": 1,
+              "audio": 1,
+              "mcp": 1,
+              "thinking": 3,
+              "parse_url": 2
+            },
+            "auto_thinking": true,
+            "auto_search": true,
+            "thinking_format": "summary",
+            "chat_type": [
+              "t2t",
+              "t2v",
+              "t2i",
+              "image_edit",
+              "search",
+              "artifacts",
+              "web_dev",
+              "deep_research",
+              "travel",
+              "learn",
+              "slides",
+              "vqa",
+              "translate"
+            ],
+            "mcp": [
+              "image-generation",
+              "code-interpreter",
+              "amap",
+              "fire-crawl"
+            ],
+            "modality": [
+              "text",
+              "image",
+              "video"
+            ],
+            "think_skip": {
+              "enable": true
+            },
+            "credit_multiplier": 0.5,
+            "pricing_description": "按实际使用量消耗共享积分。",
+            "reasoning_efforts": [
+              "low",
+              "medium",
+              "xhigh"
+            ],
+            "default_reasoning_effort": "medium",
+            "reasoning_effort_access": {}
+          },
+          "access_control": null,
+          "is_active": true,
+          "is_visitor_active": true,
+          "updated_at": 1732711466,
+          "created_at": 1732711466
+        },
+        "preset": true,
+        "action_ids": []
+      },
+      {
+        "id": "qwen3.8-flash",
+        "name": "Qwen3.8-Flash",
+        "object": "model",
+        "owned_by": "qwen",
+        "info": {
+          "id": "qwen3.8-flash",
+          "user_id": "4a8cd1c0-a7f6-4cfa-b5dd-d6bdab408271",
+          "base_model_id": null,
+          "name": "Qwen3.8-Flash",
+          "meta": {
+            "profile_image_url": "/static/favicon.png",
+            "description": "Qwen开源权重的多模态 MoE 模型，在能力、延迟与成本间取得出色平衡。",
+            "capabilities": null,
+            "short_description": "",
+            "max_context_length": 1000000,
+            "max_generation_length": 128000,
+            "abilities": {
+              "document": 1,
+              "thinking": 3
+            },
+            "chat_type": [
+              "t2t"
+            ],
+            "modality": [
+              "text"
+            ],
+            "credit_multiplier": 0.2,
+            "pricing_description": "按实际使用量消耗共享积分。",
+            "reasoning_efforts": [
+              "low",
+              "medium",
+              "xhigh"
+            ],
+            "default_reasoning_effort": "medium",
+            "reasoning_effort_access": {}
+          },
+          "access_control": null,
+          "is_active": true,
+          "is_visitor_active": false,
+          "updated_at": 1732711466,
+          "created_at": 1732711466
+        },
+        "preset": true,
+        "action_ids": []
+      }
+    ],
+    "default_model_id": "qwen4-max"
+  }
+}

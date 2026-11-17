@@ -19,3 +19,10 @@ dist/
 # Python 缓存（scripts/ 下的测试工具）
 __pycache__/
 *.pyc
+
+# browserbridge（桥接服务）
+browserbridge/.venv/
+browserbridge/profile*/
+browserbridge/accounts.json
+browserbridge/__pycache__/
+browserbridge/*.log

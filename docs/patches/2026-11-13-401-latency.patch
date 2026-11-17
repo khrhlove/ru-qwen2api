@@ -1,0 +1,48 @@
+--- a/internal/server/keepalive.go
++++ b/internal/server/keepalive.go
+@@ -32,6 +32,8 @@
+ 	// 预热带是按 tick 轮转的：不压住失败号，它就会被每轮重新选中，对同一张可能
+ 	// 已经作废的 refresh_token 持续打 auth 域 —— 既无意义，还容易招风控。
+ 	// 取 5 分钟，与失败日志的去重窗口一致：一个号一次故障只留一条日志、一次处置。
++	// ⚠️ 只压「结果未知」的失败。401 不进这张表：票已被撤销是确定性结论，
++	// 再退避只会推迟唯一有效的修复动作（见 afterRefreshFailure）。
+ 	refreshRetryBackoff = 5 * time.Minute
+ 	// refreshLockShards 换票互斥的分片数（见 lockRefresh）。
+ 	refreshLockShards = 64
+@@ -179,6 +181,9 @@
+ 		s.pool.SetRefresh(name, refresh)
+ 	}
+ 	s.clearRefreshErr(name) // 修好了就别留着上一次的失败时间戳
++	// 成功必须留痕：否则「自愈」是静默的，出问题时分不清「还没轮到它」和
++	// 「早已修好」，只剩一条失败日志可看。
++	log.Printf("[qwen2api] 账号 %s 后台重登成功，凭据已换新", name)
+ 	return true
+ }
+ 
+@@ -491,6 +496,11 @@
+ 		// 打上 needLogin：AdoptCandidates 会把它插到队列最前面（趁请求还没
+ 		// 碰到就修好），lessPick 也会把它排到最后（请求路径不再撞上几秒的 signin）。
+ 		s.pool.MarkNeedLogin(name)
++		// 🔴 401 是**确定性**失败：票已经清空，不存在「再撞同一张死票」的风险，
++		// 退避在这里没有防护价值 —— 留着它只会把唯一有效的修复动作（密码重登）
++		// 推迟满 5 分钟。实测 2026-11-13 17:06 一批 15 个号同时被撤销，最早的重登
++		// 尝试落在 5m21s 后、最晚 7m49s 后，这段停摆本可以只有一个 tick（20s）。
++		s.clearRefreshErr(name)
+ 		log.Printf("[qwen2api] 账号 %s 的 refresh_token 已失效（401），插队重登", name)
+ 	}
+ }
+--- a/internal/server/chat.go
++++ b/internal/server/chat.go
+@@ -530,6 +530,12 @@
+ 			log.Printf("[qwen2api] 账号 %s 凭据已续期（refresh_token）", acct.Name)
+ 			return true
+ 		} else {
++			// 401 = 这张票在服务端已经作废，必须当场丢掉。留着的代价是双份的：
++			// ① 这条路径下次还要先白付一次 refresh 往返（几百 ms）才轮到 signin；
++			// ② 后台重登被同一张死票的退避挡在 5 分钟之外。
++			// afterRefreshFailure 只对 401 生效，非 401 立即返回，不影响「上游只是
++			// 抖了一下」的场景。
++			s.afterRefreshFailure(acct.Name, err)
+ 			log.Printf("[qwen2api] 账号 %s refresh_token 续期失败，改用密码重登: %v", acct.Name, err)
+ 		}
+ 	}

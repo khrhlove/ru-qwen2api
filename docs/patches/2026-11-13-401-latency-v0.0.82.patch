@@ -1,0 +1,141 @@
+--- a/internal/server/keepalive.go
++++ b/internal/server/keepalive.go
+@@ -32,6 +32,8 @@
+ 	// 预热带是按 tick 轮转的：不压住失败号，它就会被每轮重新选中，对同一张可能
+ 	// 已经作废的 refresh_token 持续打 auth 域 —— 既无意义，还容易招风控。
+ 	// 取 5 分钟，与失败日志的去重窗口一致：一个号一次故障只留一条日志、一次处置。
++	// ⚠️ 只压「结果未知」的失败。401 不进这张表：票已被撤销是确定性结论，
++	// 再退避只会推迟唯一有效的修复动作（见 afterRefreshFailure）。
+ 	refreshRetryBackoff = 5 * time.Minute
+ 	// refreshLockShards 换票互斥的分片数（见 lockRefresh）。
+ 	refreshLockShards = 64
+@@ -183,6 +185,9 @@
+ 		s.pool.SetRefresh(name, refresh)
+ 	}
+ 	s.clearRefreshErr(name) // 修好了就别留着上一次的失败时间戳
++	// 成功必须留痕：否则「自愈」是静默的，出问题时分不清「还没轮到它」和
++	// 「早已修好」，只剩一条失败日志可看。
++	log.Printf("[qwen2api] 账号 %s 后台重登成功，凭据已换新", name)
+ 	return true
+ }
+ 
+@@ -561,6 +566,11 @@
+ 		// 打上 needLogin：AdoptCandidates 会把它插到队列最前面（趁请求还没
+ 		// 碰到就修好），lessPick 也会把它排到最后（请求路径不再撞上几秒的 signin）。
+ 		s.pool.MarkNeedLogin(name)
++		// 🔴 401 是**确定性**失败：票已经清空，不存在「再撞同一张死票」的风险，
++		// 退避在这里没有防护价值 —— 留着它只会把唯一有效的修复动作（密码重登）
++		// 推迟满 5 分钟。实测 2026-11-13 17:06 一批 15 个号同时被撤销，最早的重登
++		// 尝试落在 5m21s 后、最晚 7m49s 后，这段停摆本可以只有一个 tick（20s）。
++		s.clearRefreshErr(name)
+ 		log.Printf("[qwen2api] 账号 %s 的 refresh_token 已失效（401），插队重登", name)
+ 	}
+ }
+--- a/internal/server/chat.go
++++ b/internal/server/chat.go
+@@ -779,6 +779,12 @@
+ 			log.Printf("[qwen2api] 账号 %s 凭据已续期（refresh_token）", acct.Name)
+ 			return true
+ 		} else {
++			// 401 = 这张票在服务端已经作废，必须当场丢掉。留着的代价是双份的：
++			// ① 这条路径下次还要先白付一次 refresh 往返（几百 ms）才轮到 signin；
++			// ② 后台重登被同一张死票的退避挡在 5 分钟之外。
++			// afterRefreshFailure 只对 401 生效，非 401 立即返回，不影响「上游只是
++			// 抖了一下」的场景。
++			s.afterRefreshFailure(acct.Name, err)
+ 			log.Printf("[qwen2api] 账号 %s refresh_token 续期失败，改用密码重登: %v", acct.Name, err)
+ 		}
+ 	}
+diff --git a/internal/server/relogin_repair_test.go b/internal/server/relogin_repair_test.go
+new file mode 100644
+index 0000000..0999fac
+--- /dev/null
++++ b/internal/server/relogin_repair_test.go
+@@ -0,0 +1,87 @@
++package server
++
++// 401 之后的恢复时延（2026-11-13 线上事故）。
++//
++// 现场：refresh_token 被上游撤销（`auths/refresh` 401「令牌已撤销」）后，账号
++// 在日志里只留一条失败记录，随后整整 5 分钟没有任何修复动作 —— 因为 401 的
++// 时间戳被写进了 refreshRetryBackoff，而密码重登（adoptOne）走的是同一张退避表。
++//
++// 401 是**确定性**失败：票已经清空，不存在「再撞同一张死票」的风险，退避在这里
++// 没有任何防护价值，只会把唯一有效的修复动作推迟满 5 分钟。
++//
++// 这两条测试钉住两件事：
++//   1. 401 清票后必须**立刻**允许密码重登（下一个 tick，20s）；
++//   2. 请求路径撞到 401 也必须当场丢掉死票，不能让后续每次重试都白付一次
++//      refresh 往返。
++
++import (
++	"context"
++	"net/http"
++	"strings"
++	"sync/atomic"
++	"testing"
++	"time"
++)
++
++func TestRefresh401UnblocksRelogin(t *testing.T) {
++	s, hits := refreshTestServer(t, func(w http.ResponseWriter, r *http.Request) {
++		w.Header().Set("Content-Type", "application/json")
++		switch {
++		case strings.HasSuffix(r.URL.Path, "/auths/signin"):
++			http.SetCookie(w, &http.Cookie{Name: "token", Value: "session-jwt"})
++			_, _ = w.Write([]byte(`{"success":true}`))
++		case strings.HasSuffix(r.URL.Path, "/auths/refresh"):
++			// 旧票（rt-old）已被撤销；signin 之后用 token cookie 换 access 才是新票。
++			if strings.Contains(r.Header.Get("Cookie"), "refresh_token=rt-old") {
++				w.WriteHeader(http.StatusUnauthorized)
++				_, _ = w.Write([]byte(`{"success":false,"data":{"code":"Unauthorized","details":"令牌已撤销，请重新登录。"}}`))
++				return
++			}
++			http.SetCookie(w, &http.Cookie{Name: "refresh_token", Value: "rt-new"})
++			_, _ = w.Write([]byte(`{"success":true,"data":{"access_token":"at-new"}}`))
++		default:
++			http.NotFound(w, r)
++		}
++	})
++
++	if s.refreshTokenOnly(context.Background(), "a0") {
++		t.Fatal("401 不该算续期成功")
++	}
++	// 这条断言就是本次修复的核心：票已清空，就不该再压 5 分钟退避。
++	if !s.refreshDue("a0", time.Now()) {
++		t.Fatal("401 清票后必须立刻允许密码重登，否则账号白停 5 分钟")
++	}
++	if !s.adoptOne(context.Background(), "a0") {
++		t.Fatalf("下一个 tick 就该重登成功，实际失败（上游命中 %d 次）", atomic.LoadInt32(hits))
++	}
++	if got := s.pool.RefreshToken("a0"); got != "rt-new" {
++		t.Fatalf("重登后应换上新的 refresh_token，实际 %q", got)
++	}
++	if s.pool.Snapshot()[0].NeedLogin {
++		t.Fatal("换到新票后不该再挂 need_login，否则选号一直把它排最后")
++	}
++}
++
++func TestReloginDropsRevokedTicket(t *testing.T) {
++	s, _ := refreshTestServer(t, func(w http.ResponseWriter, r *http.Request) {
++		if strings.HasSuffix(r.URL.Path, "/auths/signin") {
++			w.WriteHeader(http.StatusBadGateway) // 登录暂时不可用：模拟 WAF/网关抖动
++			return
++		}
++		w.Header().Set("Content-Type", "application/json")
++		w.WriteHeader(http.StatusUnauthorized)
++		_, _ = w.Write([]byte(`{"success":false,"data":{"code":"Unauthorized","details":"令牌已撤销，请重新登录。"}}`))
++	})
++
++	acct := s.pool.Get("a0")
++	if acct == nil {
++		t.Fatal("账号应在池里")
++	}
++	if s.relogin(context.Background(), acct) {
++		t.Fatal("signin 失败时不该报续期成功")
++	}
++	if got := s.pool.RefreshToken("a0"); got != "" {
++		t.Fatalf("请求路径撞到 401 也必须丢掉死票，实际仍留着 %q —— "+
++			"此后每次重试都要先白付一次 refresh 往返（几百 ms）", got)
++	}
++}
