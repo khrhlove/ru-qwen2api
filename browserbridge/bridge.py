@@ -301,13 +301,19 @@ def set_agent_mode(page, on: bool):
 
 
 def pick_model(page, label: str):
+    """选模型；菜单里没有该名字时回退到当前模型，而不是报错。
+
+    网关会按自己的模型表往下发（qwen3.7-max / qwen4-max…），网页端的可选项
+    并不总是同名。硬报错会让整条请求失败，降级用当前模型更合理。
+    """
     pick(page, "model_selector").first.click()
     item = page.locator(f'[role="menuitem"]:has-text("{label}"), [role="option"]:has-text("{label}")')
     try:
         item.first.wait_for(state="visible", timeout=25000)
     except Exception:
         page.keyboard.press("Escape")
-        raise RuntimeError(f"model option not found: {label}")
+        log("[warn] model not in menu, fallback:", label)
+        return
     item.first.click(timeout=15000, force=True)
     try:
         page.wait_for_selector('[role="menu"]', state="hidden", timeout=12000)
@@ -619,16 +625,14 @@ class Handler(BaseHTTPRequestHandler):
         try:
             emit({"response.created": {"chat_id": chat_id, "response_id": rid, "parent_id": ""},
                   "response_id": rid, "choices": [{"delta": {"role": "assistant"}}]})
-            job = Job(model, prompt, stream=True)
+            # 走"完成后分片"而不是实时增量：A/B 对比弹窗的内容会随原始流混进来
+            # （extract_answer 的清理只作用在最终文本上），实时推会污染正文。
+            job = Job(model, prompt, stream=False)
             _jobs.put(job)
-            while True:
-                d = job.deltas.get()
-                if d is None:
-                    break
-                # 清掉界面噪音（思考完成标记/跳过链接），避免被当成正文
-                clean = d.replace("已经完成思考", "").replace("跳过", "")
-                if clean:
-                    emit({"response_id": rid, "choices": [{"delta": {"content": clean, "phase": "answer"}}]})
+            job.done.wait(timeout=CHAT_TIMEOUT + 90)
+            text = job.text if not job.error else ""
+            for i in range(0, len(text), 24):
+                emit({"response_id": rid, "choices": [{"delta": {"content": text[i:i+24], "phase": "answer"}}]})
             if job.error:
                 emit({"response_id": rid, "error": {"code": "bridge_error", "message": job.error},
                       "choices": [{"delta": {"status": "finished"}, "finish_reason": "stop"}]})
