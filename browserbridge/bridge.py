@@ -138,6 +138,7 @@ def start_relay(idx: int, account_name: str):
         raise RuntimeError(f"relay not ready on :{port}")
     return proc, port
 PORT = int(os.environ.get("PORT", "8790"))
+BIND_HOST = os.environ.get("BIND_HOST", "127.0.0.1")
 CHAT_TIMEOUT = float(os.environ.get("CHAT_TIMEOUT", "90"))
 
 AGENT_MODELS = {
@@ -648,8 +649,8 @@ class Handler(BaseHTTPRequestHandler):
 def main():
     for i in range(WORKERS):
         threading.Thread(target=worker, args=(i,), daemon=True).start()
-    log(f"[http] listening :{PORT} workers={WORKERS}")
-    ThreadingHTTPServer(("127.0.0.1", PORT), Handler).serve_forever()
+    log(f"[http] listening {BIND_HOST}:{PORT} workers={WORKERS}")
+    ThreadingHTTPServer((BIND_HOST, PORT), Handler).serve_forever()
 
 
 if __name__ == "__main__":

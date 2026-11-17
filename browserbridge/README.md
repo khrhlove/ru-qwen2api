@@ -150,6 +150,50 @@ WORKERS=3 .venv/bin/python bridge.py      # 默认就是 3
 5. **每次都是新对话**：不做上下文续接，多轮 messages 只取最后一条 user。
 6. **登录态会过期**：`profile/` 失效后需重启并带账号密码重新登录。
 
+## 部署（ai-prod / 210.121.44.245）
+
+```bash
+# 1) 依赖
+apt-get install -y python3-venv python3-pip
+python3 -m venv /opt/browserbridge/.venv
+/opt/browserbridge/.venv/bin/pip install playwright requests
+/opt/browserbridge/.venv/bin/playwright install --only-shell chromium
+/opt/browserbridge/.venv/bin/playwright install-deps chromium
+
+# 2) 代码（bridge.py + accounts.json）
+scp bridge.py accounts.json root@<host>:/opt/browserbridge/
+
+# 3) systemd
+cat > /etc/systemd/system/qwen-browserbridge.service <<'EOF'
+[Unit]
+Description=Qwen Browser Bridge
+After=network.target
+[Service]
+WorkingDirectory=/opt/browserbridge
+Environment=WORKERS=3
+Environment=HEADLESS=1
+Environment=PORT=8790
+Environment=HOME=/root
+Environment=BIND_HOST=172.30.38.1
+ExecStart=/opt/browserbridge/.venv/bin/python /opt/browserbridge/bridge.py
+Restart=always
+RestartSec=8
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl daemon-reload && systemctl enable --now qwen-browserbridge
+```
+
+**容器直连要点**：qwen2api 容器在 `qwen2api_default`（172.30.38.0/24，网关 172.30.38.1）。把 `BIND_HOST` 设成该网关 IP，容器里直接访问 `http://172.30.38.1:8790/v1/...`，不经过 nginx、不暴露公网。
+
+宿主机开了 ufw（INPUT 默认 DROP），必须放行容器网段，否则容器连不通：
+
+```bash
+ufw allow from 172.30.38.0/24 to any port 8790 proto tcp
+```
+
+实测（容器内 `wget --post-file`）：返回 `{"content":"收到"}`，端到端打通。
+
 ## 文件
 
 - `bridge.py` — 服务本体（含 SSE 流式与多 worker）
