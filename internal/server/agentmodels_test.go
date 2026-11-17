@@ -183,3 +183,22 @@ func TestPlainModelStaysT2T(t *testing.T) {
 		t.Fatalf("普通模型被改道成 %v/%v", msg["chat_type"], msg["sub_chat_type"])
 	}
 }
+
+// agent 清单必须走 Bearer：cookie 形态上游会静默返回空数组（2026-11-17 抓包实证），
+// 拿它当"上游没有 agent 模型"会误杀已有清单。
+func TestAgentCredOKRequiresBearer(t *testing.T) {
+	cases := []struct {
+		cred string
+		ok   bool
+	}{
+		{"bearer:eyJhbGciOi.payload.sig", true},
+		{"eyJhbGciOi.payload.sig", true}, // 未标形态 = 默认按 Bearer 发
+		{"cookie:eyJhbGciOi.payload.sig", false},
+		{"cookie:token=eyJhbGciOi.payload.sig; refresh_token=x", false},
+	}
+	for _, c := range cases {
+		if got := agentCredOK(c.cred); got != c.ok {
+			t.Fatalf("agentCredOK(%q)=%v，期望 %v", c.cred, got, c.ok)
+		}
+	}
+}

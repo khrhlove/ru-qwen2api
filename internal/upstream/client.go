@@ -564,15 +564,33 @@ func (c *Client) ListAgentModels(ctx context.Context, cred string) ([]ModelEntry
 	if err != nil {
 		return nil, err
 	}
-	var out struct {
+	// 🔴 decodeEnvelope 返回的已经是 `body.data`（剥过一层信封），所以这里拿到的是
+	// `{"data":[...],"default_model_id":"qwen4-max"}` —— **单层**。
+	// 2026-11-17 浏览器抓包（Bearer）实证：
+	//   {"success":true,"data":{"data":[{...}],"default_model_id":"qwen4-max"}}
+	// 旧代码又按双层 `{"data":{"data":[...]}}` 解析，把数组塞进 struct 必然报
+	// "响应不是预期结构" —— 线上每 10min 一条、131 次零成功就是这么来的。
+	var flat struct {
+		Data []ModelEntry `json:"data"`
+	}
+	if err := json.Unmarshal(payload, &flat); err == nil {
+		// 空数组是合法结果（这号没 agent 权益/上游暂时摘掉），不是错误。
+		return flat.Data, nil
+	}
+	// 兼容"再包一层 data"与"裸数组"两种历史形态，别为结构变化再挂一次。
+	var wrapped struct {
 		Data struct {
 			Data []ModelEntry `json:"data"`
 		} `json:"data"`
 	}
-	if err := json.Unmarshal(payload, &out); err != nil {
-		return nil, NewErr(KindUnknown, "models/agent_mode", resp.StatusCode, "", "响应不是预期结构", false)
+	if err := json.Unmarshal(payload, &wrapped); err == nil {
+		return wrapped.Data.Data, nil
 	}
-	return out.Data.Data, nil
+	var arr []ModelEntry
+	if err := json.Unmarshal(payload, &arr); err == nil {
+		return arr, nil
+	}
+	return nil, NewErr(KindUnknown, "models/agent_mode", resp.StatusCode, "", "响应不是预期结构", false)
 }
 
 // AccountInfo 账号资料（面板"验活"用，不含任何凭据原文）。

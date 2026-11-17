@@ -1,9 +1,14 @@
 package upstream
 
 import (
+	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/yuanjie-ai/qwen2api/internal/config"
 )
 
 // Agent 模式的真实帧与请求体（2026-11-08 一手抓包，见 docs/UPSTREAM.md §10）。
@@ -279,5 +284,89 @@ func TestAgentBusyIsRetryable(t *testing.T) {
 	}
 	if RetrySafe(err3) {
 		t.Fatal("普通错误不该被判为可重试")
+	}
+}
+
+// ListAgentModels 的解析：decodeEnvelope 已剥一层，payload 是**单层**。
+//
+// 2026-11-17 浏览器抓包（Bearer 登录态）实证的真实响应：
+//
+//	{"success":true,"data":{"data":[{id:qwen4-max},...],"default_model_id":"qwen4-max"}}
+//
+// 旧代码按双层解析 ⇒ 把数组塞进 struct ⇒ "响应不是预期结构"，线上 131 次零成功。
+func TestListAgentModelsUnwrapsEnvelopeOnce(t *testing.T) {
+	body := `{"success":true,"request_id":"r1","data":{"data":[
+		{"id":"qwen4-max","name":"Qwen4-Max","info":{"is_active":true,"meta":{"chat_type":["agent_mode"],"max_context_length":1000000,"capabilities":{"vision":true,"thinking":true}}}},
+		{"id":"qwen3.8-max","name":"Qwen3.8-Max","info":{"is_active":true,"meta":{"chat_type":["t2t"],"max_context_length":1000000}}},
+		{"id":"qwen3.8-flash","name":"Qwen3.8-Flash","info":{"is_active":true,"meta":{"chat_type":["t2t"],"max_context_length":1000000}}}
+	],"default_model_id":"qwen4-max"}}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v2/models/agent_mode" {
+			t.Errorf("路径不对: %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(srv.Close)
+
+	cfg := config.Default()
+	cfg.Upstream.BaseURL = srv.URL
+	cli := New(cfg.Upstream)
+
+	got, err := cli.ListAgentModels(context.Background(), "bearer:tok")
+	if err != nil {
+		t.Fatalf("解析失败: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("应得 3 个底座，得到 %d: %+v", len(got), got)
+	}
+	if got[0].ID != "qwen4-max" || got[0].Name != "Qwen4-Max" {
+		t.Fatalf("首条不对: %+v", got[0])
+	}
+	if ctx := got[0].Info.Meta.MaxContextLength; ctx != 1000000 {
+		t.Fatalf("上下文长度没解出来: %d", ctx)
+	}
+}
+
+// 空数组是**合法结果**（这号没 agent 权益 / 上游暂时摘掉），不能当错误。
+// 当错误 ⇒ 每 10min 一条"响应不是预期结构"，且永远走硬编码兜底。
+func TestListAgentModelsEmptyIsNotError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true,"data":{"data":[],"default_model_id":null}}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	cfg := config.Default()
+	cfg.Upstream.BaseURL = srv.URL
+	cli := New(cfg.Upstream)
+
+	got, err := cli.ListAgentModels(context.Background(), "bearer:tok")
+	if err != nil {
+		t.Fatalf("空清单不该报错: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("空清单应返回 0 条，得到 %d", len(got))
+	}
+}
+
+// 裸数组形态（更早的契约）也要能吃下：别为结构变化再挂一次。
+func TestListAgentModelsRawArrayShape(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true,"data":[{"id":"qwen4-max","name":"Qwen4-Max"}]}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	cfg := config.Default()
+	cfg.Upstream.BaseURL = srv.URL
+	cli := New(cfg.Upstream)
+
+	got, err := cli.ListAgentModels(context.Background(), "bearer:tok")
+	if err != nil {
+		t.Fatalf("裸数组解析失败: %v", err)
+	}
+	if len(got) != 1 || got[0].ID != "qwen4-max" {
+		t.Fatalf("裸数组解析结果不对: %+v", got)
 	}
 }

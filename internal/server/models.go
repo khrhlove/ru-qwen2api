@@ -162,12 +162,18 @@ func (c *ModelCache) refresh(ctx context.Context) {
 	// 失败不影响主清单（agents 保持上一份，不再更新即可）。
 	var agents []upstream.ModelEntry
 	if err == nil {
-		var aerr error
-		agents, aerr = c.up.ListAgentModels(ctx, acct.Token)
-		if aerr != nil {
-			// 🔴 必须打出来：这个清单决定"上游上新能不能自动发现"，静默失败
-			// 的表现就是"新模型永远不出现"，而日志里一片干净。
-			log.Printf("[qwen2api] agent 底座清单拉取失败: %v", aerr)
+		// 🔴 agent 清单是 Bearer-only：2026-11-17 抓包实证，同一个号
+		//   cookie  → {"data":{"data":[],"default_model_id":null}}（静默降级成 guest 视图）
+		//   bearer → 三条（qwen4-max / qwen3.8-max / qwen3.8-flash）
+		// 所以 cookie 形态干脆不问，免得把"没权限"误读成"上游没有 agent 模型"。
+		if agentCredOK(acct.Token) {
+			var aerr error
+			agents, aerr = c.up.ListAgentModels(ctx, acct.Token)
+			if aerr != nil {
+				// 🔴 必须打出来：这个清单决定"上游上新能不能自动发现"，静默失败
+				// 的表现就是"新模型永远不出现"，而日志里一片干净。
+				log.Printf("[qwen2api] agent 底座清单拉取失败: %v", aerr)
+			}
 		}
 	}
 	c.pool.Release(acct)
@@ -191,6 +197,16 @@ func (c *ModelCache) refresh(ctx context.Context) {
 		c.agents = agents
 		c.agentsAt = time.Now()
 	}
+}
+
+// agentCredOK 该凭据能不能用来拉 agent 底座清单。
+//
+// 🔴 必须是 Bearer：2026-11-17 抓包实证，同一个号 cookie 形态拿到的是
+// `{"data":{"data":[],"default_model_id":null}}`（静默降级成 guest 视图），
+// 只有 Bearer 才返回真实清单。宁可这轮不更新，也别拿空数组把已有清单冲掉。
+func agentCredOK(cred string) bool {
+	mode, _ := upstream.SplitCredential(cred)
+	return mode != upstream.ModeCookie
 }
 
 // Info 观测面（不含清单内容）。
