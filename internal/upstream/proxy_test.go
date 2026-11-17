@@ -331,3 +331,45 @@ func mustReqCtx(ctx context.Context, u string) *http.Request {
 	req.Header.Set("User-Agent", "test")
 	return req
 }
+
+// 内网目标必须直连：socks5 出口到不了私有网段（bridge 就监听在 docker 网桥上）。
+func TestIsDirectHost(t *testing.T) {
+	cases := []struct {
+		host string
+		want bool
+	}{
+		{"127.0.0.1", true},
+		{"172.30.38.1", true},
+		{"172.17.0.1", true},
+		{"10.0.0.5", true},
+		{"192.168.1.10", true},
+		{"localhost", false}, // 主机名交给代理远端解析
+		{"LOCALHOST", false},
+		{"[::1]", true},
+		{"fd00::1", true},
+		{"chat.qwen.ai", false},
+		{"142.4.107.96", false},
+		{"38.6.213.65", false},
+		{"8.8.8.8", false},
+		{"", false},
+	}
+	for _, c := range cases {
+		if got := isDirectHost(c.host); got != c.want {
+			t.Errorf("isDirectHost(%q) = %v, want %v", c.host, got, c.want)
+		}
+	}
+}
+
+// 禁止直连策略下，内网目标也不得绕过（否则"真实 IP 绝不出现"的承诺失效）。
+func TestProxyRouterPrivateHostBlockedWhenDirectForbidden(t *testing.T) {
+	no := false
+	r := &proxyRouter{
+		base:  http.DefaultTransport.(*http.Transport).Clone(),
+		cfg:   config.Proxy{Enabled: true, URLTemplate: "socks5h://u:p@127.0.0.1:1", DirectWhenMissing: &no},
+		cache: map[string]*http.Transport{},
+	}
+	req, _ := http.NewRequest(http.MethodGet, "http://172.30.38.1:8790/healthz", nil)
+	if _, err := r.RoundTrip(req); err == nil {
+		t.Fatal("期望报错（禁止直连时内网目标不应放行），实际没有")
+	}
+}

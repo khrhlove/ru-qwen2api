@@ -58,11 +58,36 @@ func newProxyRouter(base *http.Transport, cfg config.Proxy) http.RoundTripper {
 }
 
 func (r *proxyRouter) RoundTrip(req *http.Request) (*http.Response, error) {
+	// 内网/回环目标直连：典型是本地兜底通道（browser bridge 监听在 docker
+	// 网桥网关 IP 上）。socks5 出口是给上游用的，它到不了私有网段，
+	// 硬走代理只会得到 "CONNECT 被拒（网络不可达）"。
+	if isDirectHost(req.URL.Hostname()) {
+		if r.cfg.Enabled && r.cfg.DirectWhenMissing != nil && !*r.cfg.DirectWhenMissing {
+			// 运维显式禁止直连（"绝不允许真实 IP 出现"）时，内网目标也不放行，
+			// 否则这条旁路会让该承诺失效。
+			return nil, fmt.Errorf("目标 %s 属于内网，但配置禁止直连", req.URL.Hostname())
+		}
+		return r.base.RoundTrip(req)
+	}
 	tr, err := r.transportFor(AccountOf(req.Context()))
 	if err != nil {
 		return nil, err
 	}
 	return tr.RoundTrip(req)
+}
+
+// isDirectHost 目标主机是否属于"不该走出口代理"的本地/内网地址。
+//
+// 只认**字面 IP** 的回环与 RFC1918/ULA 私有网段；主机名（含 localhost）
+// 一律返回 false —— 主机名要继续交给代理做远端解析（socks5h 语义），
+// 而且宁可漏判（走代理后失败，报错明确）也不能误判（把本该走代理的
+// 上游请求暴露成真实 IP）。
+func isDirectHost(host string) bool {
+	ip := net.ParseIP(strings.Trim(strings.TrimSpace(host), "[]"))
+	if ip == nil {
+		return false
+	}
+	return ip.IsLoopback() || ip.IsPrivate()
 }
 
 func (r *proxyRouter) transportFor(account string) (*http.Transport, error) {
