@@ -241,6 +241,34 @@ ufw allow from 172.30.38.0/24 to any port 8790 proto tcp
 
 实测（容器内 `wget --post-file`）：返回 `{"content":"收到"}`，端到端打通。
 
+## 吞吐优化：RPM 从 5 提升到 20（2026-11-17 23:40）
+
+压测脚本 `bench_rpm.py`（固定并发跑 N 个请求，统计墙钟/成功率/分位耗时）。
+
+| 配置 | RPM | 成功 | P50 | P95 | max |
+|---|---|---|---|---|---|
+| WORKERS=3，超时 90s | **5.1** | 9/9 | 10.9s | 19.0s | **105.8s** |
+| WORKERS=5，超时 90s | 4.0 | 9/10 | 9.1s | 18.0s | 33.4s（1×504） |
+| **WORKERS=3，超时 60s** | **15.9** | 9/9 | 8.8s | 11.4s | 20.5s |
+| **WORKERS=5，超时 60s** | **20.3** | 12/12 | 13.1s | 17.6s | 19.5s |
+| WORKERS=5，超时 60s（复测） | 18.1 | 12/12 | 9.6s | 22.7s | 30.7s |
+
+**关键结论：卡住 RPM 的不是并发数，而是长尾。**
+
+`CHAT_TIMEOUT=90` 时，一个卡死的请求要占住 worker 90 秒；再叠加一次重试就是 180 秒。3 个 worker 里只要有一个被拖住，整轮吞吐就塌了 —— 表里 max=105.8s 就是这种情况。
+
+把超时压到 **60s** 后，卡住的请求被快速切断并重试，长尾从 105s 收敛到 20-30s，RPM 直接翻了 3-4 倍。
+
+**注意反直觉的一点**：5 worker 在 90s 超时下比 3 worker 还差（4.0 vs 5.1），因为更多 worker 只是让更多请求同时卡住。**先修超时，再加并发**。
+
+线上配置（systemd drop-in）：
+
+```
+/etc/systemd/system/qwen-browserbridge.service.d/workers.conf   Environment=WORKERS=5
+/etc/systemd/system/qwen-browserbridge.service.d/bind.conf      Environment=BIND_HOST=172.30.38.1
+/etc/systemd/system/qwen-browserbridge.service.d/timeout.conf   Environment=CHAT_TIMEOUT=60
+```
+
 ## 端到端验证（ai-prod，2026-11-17 23:30）
 
 | 测试 | 结果 |
