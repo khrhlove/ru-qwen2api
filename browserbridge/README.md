@@ -150,6 +150,53 @@ WORKERS=3 .venv/bin/python bridge.py      # 默认就是 3
 5. **每次都是新对话**：不做上下文续接，多轮 messages 只取最后一条 user。
 6. **登录态会过期**：`profile/` 失效后需重启并带账号密码重新登录。
 
+## qwen 原生协议兼容层（供 qwen2api 直连）
+
+为了让网关不用改一行 Go 代码就能切到 bridge，实现了两个 qwen 原生端点：
+
+| 端点 | 行为 |
+|---|---|
+| `POST /api/v2/chats/new` | 返回 `{success, request_id, data:{id:"bb-xxx"}}` |
+| `POST /api/v2/chat/completions?chat_id=` | 返回 qwen 风格 SSE：`response.created` → `choices[].delta.{content,phase}` → `status:"finished"` |
+
+对齐的是 qwen2api 的 `internal/upstream/sse.go::wireEvent` 结构（`delta.content` + `phase`）。界面噪音（`已经完成思考`、`跳过`）在推送前就清掉了。
+
+### 验证结果（2026-11-17 23:50）
+
+把 `config.json` 的 `upstream.base_url` 指到 `http://172.30.38.1:8790` 后：
+
+| 测试 | 结果 |
+|---|---|
+| 网关非流式 | ✅ 9.86s |
+| 网关流式 | ✅ 9.73s，`delta.content:"收到"`，qwen2api 正确解析 |
+
+**链路完整打通**：客户端 → qwen2api → bridge（qwen 协议）→ 浏览器 → 回传。
+
+### 🔴 硬阻塞：socks5 代理拦截内网地址
+
+网关日志里的真实报错：
+
+```
+err=chats/new:: Post "http://172.30.38.1:8790/api/v2/chats/new":
+    socks5: CONNECT 被拒（网络不可达）
+```
+
+qwen2api 给每个账号配了 socks5 出口（`upstream.proxy`，账号→固定 IP），**所有出站请求都走代理**，包括指向内网 `172.30.38.1` 的 bridge 请求 —— 代理当然连不上内网。
+
+测试时临时 `proxy.enabled=false` 才打通。但那会丢掉"账号→固定出口"的保护，**不能长期这么跑**。
+
+正确解法是让 qwen2api 支持 **no_proxy**（内网/回环地址直连），在 `internal/upstream/proxy.go` 里加一个判断：
+
+```go
+// 私有网段 / 回环 ⇒ 不走代理
+func isDirectHost(host string) bool {
+    ip := net.ParseIP(host)
+    return ip != nil && (ip.IsLoopback() || ip.IsPrivate())
+}
+```
+
+**在此之前，bridge 只能手动切换使用**：改 `base_url` + 临时关 proxy，用完立刻回滚。
+
 ## 部署（ai-prod / 210.121.44.245）
 
 ```bash

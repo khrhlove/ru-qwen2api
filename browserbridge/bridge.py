@@ -571,7 +571,84 @@ class Handler(BaseHTTPRequestHandler):
     def _sse(self, obj: dict):
         self._chunk(b"data: " + json.dumps(obj, ensure_ascii=False).encode() + b"\n\n")
 
+    # ---------- qwen 原生协议兼容层（供 qwen2api 直连，零改 Go 代码）----------
+    def _qwen_new_chat(self):
+        """POST /api/v2/chats/new → {success, request_id, data:{id}}"""
+        n = int(self.headers.get("Content-Length") or 0)
+        try:
+            self.rfile.read(n)
+        except Exception:
+            pass
+        chat_id = "bb-" + uuid.uuid4().hex[:12]
+        self._json(200, {"success": True, "request_id": uuid.uuid4().hex,
+                         "data": {"id": chat_id}})
+
+    def _qwen_chat(self):
+        """POST /api/v2/chat/completions?chat_id= → qwen 风格 SSE
+
+        qwen2api 的 wireEvent 结构：choices[0].delta.{role,content,phase,status}，
+        首帧还看 response.created。phase=answer 是正文，think 是思考。
+        """
+        n = int(self.headers.get("Content-Length") or 0)
+        try:
+            body = json.loads(self.rfile.read(n) or b"{}")
+        except Exception:
+            return self._json(400, {"success": False, "data": {"code": "BadRequest"}})
+        model = body.get("model") or "qwen3.7-plus"
+        prompt = ""
+        for m in reversed(body.get("messages") or []):
+            if m.get("role") == "user":
+                c = m.get("content")
+                prompt = c if isinstance(c, str) else json.dumps(c, ensure_ascii=False)
+                break
+        chat_id = "bb-" + uuid.uuid4().hex[:12]
+        rid = uuid.uuid4().hex[:16]
+
+        if not prompt:
+            return self._json(400, {"success": False, "data": {"code": "EmptyPrompt"}})
+
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Transfer-Encoding", "chunked")
+        self.end_headers()
+
+        def emit(obj):
+            self._chunk(b"data: " + json.dumps(obj, ensure_ascii=False).encode() + b"\n\n")
+
+        try:
+            emit({"response.created": {"chat_id": chat_id, "response_id": rid, "parent_id": ""},
+                  "response_id": rid, "choices": [{"delta": {"role": "assistant"}}]})
+            job = Job(model, prompt, stream=True)
+            _jobs.put(job)
+            while True:
+                d = job.deltas.get()
+                if d is None:
+                    break
+                # 清掉界面噪音（思考完成标记/跳过链接），避免被当成正文
+                clean = d.replace("已经完成思考", "").replace("跳过", "")
+                if clean:
+                    emit({"response_id": rid, "choices": [{"delta": {"content": clean, "phase": "answer"}}]})
+            if job.error:
+                emit({"response_id": rid, "error": {"code": "bridge_error", "message": job.error},
+                      "choices": [{"delta": {"status": "finished"}, "finish_reason": "stop"}]})
+            else:
+                emit({"response_id": rid, "_bridge_ms": job.ms, "usage": {},
+                      "choices": [{"delta": {"status": "finished"}, "finish_reason": "stop"}]})
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        finally:
+            try:
+                self.wfile.write(b"0\r\n\r\n")
+                self.wfile.flush()
+            except Exception:
+                pass
+
     def do_POST(self):
+        if self.path.startswith("/api/v2/chats/new"):
+            return self._qwen_new_chat()
+        if self.path.startswith("/api/v2/chat/completions"):
+            return self._qwen_chat()
         if self.path != "/v1/chat/completions":
             return self._json(404, {"error": "not found"})
         n = int(self.headers.get("Content-Length") or 0)
