@@ -263,6 +263,10 @@ func (s *Server) warmTarget(peak int) int {
 	if target < 8 {
 		target = 8
 	}
+	// 空闲期下限（默认 0 = 纯按流量算）。设大可以避免"突发第一个请求撞冷启动"。
+	if min := ka.TargetMin; min > target {
+		target = min
+	}
 	// 上限不是拍脑袋：热满时间必须 < access TTL，否则刚热完就开始过期。
 	if target > ka.TargetMax {
 		target = ka.TargetMax
