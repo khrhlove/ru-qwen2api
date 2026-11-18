@@ -300,6 +300,65 @@ CPU 只用了 10 核左右（服务器 64 核），内存 22G/47G。是**单机�
 - 要更高吞吐只能**加机器**（每台 5 个），不能加 worker
 - **不要再对同一 IP 做扩容压力测试** —— 一次 10 并发的代价是整站被 WAF 挑战，恢复要等冷却
 
+## 账号保活体系现状（2026-11-18 10:50）
+
+按需求调整了保活参数，并查清了 refresh 链路的真实状态。
+
+### 已调整的参数
+
+| 项 | 原值 | 新值 | 依据 |
+|---|---|---|---|
+| `refreshMaintainWindow` | 3 天 | **10 天** | refresh_token TTL 30 天，留 20 天余量滚动 |
+| `refreshMaintainBatch` | 2 | **32** | 单轮保养 32 个，20s 一轮 ⇒ 3100 个号约 33 分钟轮一遍 |
+| `doRefresh` 超时 | 10s | **25s** | 经 socks5 到 auth.qwen.ai 实测 TTFB 4.4s，10s 必超时 |
+| `refreshTokenOnly` 调用方 | 15s | **45s** | 必须比内层 25s 长，否则预算用不上 |
+| access 预刷新窗口 | `token_window_s=180` | 不变 | 15 分钟 TTL，提前 3 分钟刷新 |
+
+### 关键修复：refresh 超时导致 refresh_token 永远补不上
+
+改之前日志满屏：
+
+```
+续期失败: auths/refresh:: Get "https://auth.qwen.ai/api/v2/auths/refresh": context deadline exceeded
+```
+
+refresh 走 socks5 出口到 auth 域，实测 TTFB **4.4s**（本机直连 0.15s），叠加并发争抢后 10s 预算必然超时。结果 `refresh_token` 一个都存不下来（`has_refresh: 0`），账号只能靠密码重登，于是大量 `auth_dead`。
+
+**不能改成直连**：实测直连 `auth.qwen.ai` 返回 `405 + HTML 错误页`（该域对机房 IP 有防护）。
+
+放宽到 25s 后：
+
+| 指标 | 改前 | 改后 |
+|---|---|---|
+| `has_refresh` | **0** | **3035** |
+| `auth_dead` | 100 | 56 |
+| `ready` | 3035 | 3079 |
+
+### 仍然未解的问题：refresh_token 用不了（401）
+
+落盘验证通过 —— refresh_token 是 297B 的 JWT，与 access token 不同（`same=False`），格式正确。但用它换 access 时：
+
+```
+续期失败: auths/refresh: HTTP 401 Unauthorized
+```
+
+近 5 分钟统计：失败 41 条，**成功 0 条**。
+
+**判断**：这批账号的 refresh 链路已在上游侧失效（可能是 refresh_token 一次性，或与当初 signin 的会话绑定）。代码注释里 2026-10-30 记的「refresh_token 可重复使用」，到 11-18 已经不成立了。
+
+⇒ 无法靠代码解决，只能换新号（新 signin 出来的 refresh_token 是新鲜的）。
+
+### 分层刷新设计（代码已实现）
+
+```
+请求 → access 有效（>180s）→ 直接用
+     → access 快过期        → 用 refresh_token 换新 access（预刷新）
+     → refresh 失效（401）  → 密码 signin 重登
+     → signin 也被拒       → 标记 auth_dead，切下一个号
+```
+
+请求路径上打到失效号时会立刻刷新或切号兜底（`internal/server/chat.go` 的 relogin 分支），不阻塞调用方。
+
 ## 吞吐优化：RPM 从 5 提升到 20（2026-11-17 23:40）
 
 压测脚本 `bench_rpm.py`（固定并发跑 N 个请求，统计墙钟/成功率/分位耗时）。
