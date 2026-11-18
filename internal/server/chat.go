@@ -1177,6 +1177,12 @@ func (sd *opened) usageFor(u *upstream.Usage) (*Usage, bool) {
 // applyUsage 把 usage 同时落到流水（cached/est 与对外响应保持一致）。
 func applyUsage(entry *reqlog.Entry, u *upstream.Usage, out *Usage, estimated bool) {
 	if u == nil || out == nil {
+		// 上游这一轮没下发 usage（Agent 偶发：顶层恒为 {}，extra.model_service_info
+		// 也不是每次都带）。流水里 tok 会显示 0/0，容易被误读成"漏记" ——
+		// 记一条日志，区分"上游没给"和"我们解析丢了"。
+		if u == nil && entry != nil {
+			log.Printf("[usage-miss] %s acct=%s 上游未下发 usage，tok 记为 0", entry.Model, entry.Account)
+		}
 		return
 	}
 	entry.PromptTokens = out.PromptTokens
