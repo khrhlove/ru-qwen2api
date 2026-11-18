@@ -35,6 +35,8 @@ const (
 	// 原值 2 是有账的：refresh TTL 30 天、保养窗口 10 天 ⇒ 每号每 20 天一次
 	// ⇒ 3000 号约 150 次/天，3N=6 次/分钟完全够，还留了大量余量。
 	refreshMaintainBatch = 2
+	// capTick 容量快照的打印间隔（见 logCapacity）。
+	capTick = 5 * time.Minute
 	// refreshRetryBackoff 续期失败后的静默期。
 	//
 	// 预热带是按 tick 轮转的：不压住失败号，它就会被每轮重新选中，对同一张可能
@@ -77,6 +79,10 @@ func (s *Server) KeepAlive(ctx context.Context) {
 	// 🔴 peak 每轮只取一次：它是"上一轮到现在"的并发峰值，几个环节必须共用
 	// 同一个数 —— 让每个函数各调一次 Swap(0) 的话，第一个调用者就把峰值吃掉，
 	// 后面的环节全看到 0，等于白算。
+	// 容量快照：5 分钟一条，用来回答"什么时候开始不够用了"。
+	// 只打一行，便于 `docker logs | grep capacity` 直接看趋势。
+	lastCap := time.Time{}
+
 	runOne := func() {
 		peak := int(s.inflightPeak.Swap(0))
 		// 顺带维护上游模型清单：请求路径要拿它拒绝"已下架的模型"（见
@@ -88,6 +94,10 @@ func (s *Server) KeepAlive(ctx context.Context) {
 		s.prewarmChats(ctx, peak)
 		changed = s.maintainRefresh(ctx) || changed
 		saveIfDue(changed)
+		if time.Since(lastCap) >= capTick {
+			s.logCapacity(peak)
+			lastCap = time.Now()
+		}
 	}
 
 	runOne()
@@ -630,4 +640,50 @@ func (s *Server) noteRefreshErr(name string, err error) {
 	s.refreshErrAt[name] = now
 	s.creditErrMu.Unlock()
 	log.Printf("[qwen2api] 账号 %s 续期失败: %v", name, err)
+}
+
+// logCapacity 打印一行容量快照。
+//
+// 目的只有一个：**事后能回答"从什么时候开始不够用的"**。
+// 关键指标是 token_fresh / warmTarget —— 它低于一半就说明 signin 补不过来了，
+// 那时候吞吐会先掉、然后开始 503。
+func (s *Server) logCapacity(peak int) {
+	ka := s.conf().Pool.Keepalive.Effective()
+	target := s.warmTarget(peak)
+	if min := ka.TargetMin; min > target {
+		target = min
+	}
+	fresh := s.pool.TokenFreshCount()
+	cps := s.chats.Stat()
+	ready := cps.Ready
+
+	// 最近 5 分钟的请求量与失败量
+	cut := time.Now().Add(-capTick)
+	var reqN, errN, s503 int
+	for _, e := range s.log.Recent(0) {
+		if !e.Time.After(cut) {
+			continue
+		}
+		reqN++
+		if e.Status >= 400 {
+			errN++
+		}
+		if e.Status == 503 {
+			s503++
+		}
+	}
+
+	tag := ""
+	if fresh*2 < target {
+		tag = " WARN=token_fresh_low"
+	}
+	if s503 > 0 {
+		tag += " WARN=503"
+	}
+	if errN*10 > reqN && reqN > 0 {
+		tag += " WARN=err_rate_high"
+	}
+	rate := cps.HitPct
+	log.Printf("[capacity] token_fresh=%d/%d chat_ready=%d hit=%.1f%% inflight=%d req5m=%d err5m=%d s503=%d%s",
+		fresh, target, ready, rate, peak, reqN, errN, s503, tag)
 }
