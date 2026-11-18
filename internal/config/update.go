@@ -92,6 +92,8 @@ var Fields = []Field{
 		Hint: "一轮最多处理几个号。太大容易把上游打热"},
 	{Key: "pool.keepalive.target_max", Label: "预热目标上限", Type: "int", Min: 8, Max: 4096, Hot: true,
 		Hint: "按流量估算出的目标数上限。热满时间必须小于 token 的 15 分钟 TTL"},
+	{Key: "pool.keepalive.hot_rotate_s", Label: "热池轮换周期（秒）", Type: "int", Min: 0, Max: 86400, Hot: true,
+		Hint: "0 = 关闭。按周期把热池窗口推进一段，让 3000+ 个号轮流值班；换批是重叠式的（新窗口先热，旧窗口自然过期），不影响首字"},
 
 	{Key: "video.root_model", Label: "视频内核模型", Type: "string", Hot: true,
 		Hint: "实测 happyhorse11；改错会 Bad_Request"},

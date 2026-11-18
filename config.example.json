@@ -93,7 +93,7 @@
     "max_video_per_day": 1,
     "// max_video_credits_per_day": "单账号每日视频积分预算，0 = 不启用（默认）。现在会读账号真实余额（upstream.entitlement_base_url），余额才是真口径；这条只在你想额外加一道日上限时才填",
     "max_video_credits_per_day": 0,
-    "// keepalive": "预热节奏。全部支持热更（面板改完下一轮 tick 生效，不用重启）。tick_s = 轮询间隔；token_window_s = access 剩余多久开始续（必须 > tick_s）；conc_factor = 会话/连接覆盖 = 并发峰值 × 它 + 4（会话和连接只服务同时在跑的请求，不需要按 target_max 覆盖）；adopt_batch = 每轮补几个 refresh_token（要密码登录，故意摊慢）；parallel = 单批并发；batch_max = 单轮上限；target_max = token 预热目标上限（热满时间必须小于 access 的 15 分钟 TTL）",
+    "// keepalive": "预热节奏。全部支持热更（面板改完下一轮 tick 生效，不用重启）。tick_s = 轮询间隔；token_window_s = access 剩余多久开始续（必须 > tick_s）；conc_factor = 会话/连接覆盖 = 并发峰值 × 它 + 4（会话和连接只服务同时在跑的请求，不需要按 target_max 覆盖）；adopt_batch = 每轮补几个 refresh_token（要密码登录，故意摊慢）；parallel = 单批并发；batch_max = 单轮上限；target_max = token 预热目标上限（热满时间必须小于 access 的 15 分钟 TTL）；hot_rotate_s = 热池轮换周期（0=关闭，建议 3600）",
     "keepalive": {
       "tick_s": 20,
       "token_window_s": 180,
@@ -101,7 +101,8 @@
       "adopt_batch": 12,
       "parallel": 4,
       "batch_max": 48,
-      "target_max": 512
+      "target_max": 512,
+      "hot_rotate_s": 0
     }
   },
   "// accounts": "凭据两种给法：① token（Barear 或 cookie jar，启动时自动探测形态）；② email+password（signin→refresh 自动换 access_token，失效自动重登）。注意 token 与 password 可同时给，password 用于续期。",

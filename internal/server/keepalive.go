@@ -82,9 +82,15 @@ func (s *Server) KeepAlive(ctx context.Context) {
 	// 容量快照：5 分钟一条，用来回答"什么时候开始不够用了"。
 	// 只打一行，便于 `docker logs | grep capacity` 直接看趋势。
 	lastCap := time.Time{}
+	// 热池轮换的计时起点：第一次轮换在启动 hot_rotate_s 之后。
+	// 不复用"启动即轮换"：重启后整池都过期，第一轮该按排序把正在用的号热起来。
+	lastRotate := time.Now()
 
 	runOne := func() {
 		peak := int(s.inflightPeak.Swap(0))
+		// 先推进窗口：本轮 warmOnce 就该续新窗口里的号（换批是重叠式的，
+		// 旧窗口的票不会立刻失效，见 rotateHotPool）。
+		s.rotateHotPool(peak, &lastRotate)
 		// 顺带维护上游模型清单：请求路径要拿它拒绝"已下架的模型"（见
 		// openUpstreamSpec），但校验本身绝不能去打上游 —— 所以刷新放在这里，
 		// 每轮一次（缓存 10 分钟，绝大多数轮次是空转）。
@@ -113,6 +119,42 @@ func (s *Server) KeepAlive(ctx context.Context) {
 			runOne()
 		}
 	}
+}
+
+// rotateHotPool 到点把热池窗口推进一段。
+//
+// 为什么是"重叠式"而不是直接换掉（2026-11-18）：新窗口的号没有预建会话，
+// 换批瞬间的 chat 请求会掉进 +2~3s 的冷启动。这里只推进**续期**窗口：
+// 新窗口立刻被续期 + 预建会话，旧窗口的票保留到自然过期（≤15 分钟），
+// 这段时间两边都算热号（HotNames 把新窗口排在前面，prewarm 覆盖两倍目标）。
+//
+// 环的顺序和排除规则见 pool.RotateHotWindow。
+func (s *Server) rotateHotPool(peak int, last *time.Time) {
+	ka := s.conf().Pool.Keepalive.Effective()
+	if ka.HotRotateS <= 0 {
+		// 热更关掉轮换时必须清窗口，否则预热永远锁在最后那批号上。
+		if s.pool.HotRotating() {
+			s.pool.ClearHotWindow()
+			log.Printf("[qwen2api] 热池轮换已关闭，回到按排序预热")
+		}
+		return
+	}
+	if time.Since(*last) < time.Duration(ka.HotRotateS)*time.Second {
+		return
+	}
+	// 先记时间：即使这一轮没有可轮换的号，也别每个 tick 都重算一遍。
+	*last = time.Now()
+	size := s.warmTarget(peak)
+	names := s.pool.RotateHotWindow(size)
+	if len(names) == 0 {
+		// 环里一个"修得动"的号都没有（例如启动时整池探测失败被冷却）。
+		// 别白等一整个周期：1 分钟后重试。
+		*last = time.Now().Add(time.Duration(ka.HotRotateS)*time.Second - time.Minute)
+		log.Printf("[qwen2api] 热池轮换跳过：没有可用号（失效/无 refresh_token/额度打满），1 分钟后重试")
+		return
+	}
+	log.Printf("[qwen2api] 热池轮换：%d 个号进入窗口（%s … %s），旧窗口在 15 分钟内自然过期（周期 %ds）",
+		len(names), names[0], names[len(names)-1], ka.HotRotateS)
 }
 
 // adoptOnce 给"还没 refresh_token 的号"补一张（用密码登录一次）。
@@ -370,6 +412,12 @@ func (s *Server) prewarmChats(ctx context.Context, peak int) {
 	// 保活面必须覆盖选号面，否则"省下来的保活"会以"每次多 2~5 秒首字"
 	// 的形式十倍还回去。
 	need := s.warmTarget(peak)
+	// 换批后的重叠期：旧窗口的号还在服务，它们的会话不能立刻撤 ——
+	// 覆盖范围翻倍，让新旧两批都有人管。等旧票过期后 HotNames 自然只剩
+	// 新窗口那么多号，这里多出来的额度不会被浪费。
+	if s.pool.HotRotating() {
+		need *= 2
+	}
 	s.chatTargetNow.Store(int32(need))
 	names := s.pool.HotNames(need)
 	if len(names) == 0 {

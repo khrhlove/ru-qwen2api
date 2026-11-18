@@ -141,6 +141,11 @@ type Pool struct {
 	cfg   atomic.Value // config.Pool
 	state string
 	rr    int
+	// hotWindow 当前热池轮换窗口（nil = 未启用轮换，预热仍按排序取前 target）。
+	// 只有窗口内的号会被续期；旧窗口的票自然过期，形成"重叠式换批"。
+	hotWindow map[string]struct{}
+	// rotateOff 轮换游标（在"按名字排序的可用号"环上的偏移）。
+	rotateOff int
 }
 
 // SetConfig 热更新池参数（限额 / 冷却 / 轮换）。已在途的请求不受影响。
@@ -1134,6 +1139,83 @@ func (p *Pool) restore() {
 	}
 }
 
+// RotateHotWindow 把热池窗口推进一段，返回新窗口内的账号名。
+//
+// 环的顺序按**名字**排，不按 alive/served：游标必须稳定 —— 列表若随着选号、
+// 续期每 tick 变动，切出来的每轮都不一样，等于没轮换。名字是配置里的标识，
+// 跨 tick、跨重启都一致。
+//
+// 只把"修得动"的号放进环里：失效、冷却中、没有 refresh_token、今日额度打满
+// 的都不算 —— 轮到一个修不了的号等于白少一个热位。
+//
+// 换批不撤销旧窗口：旧号的票还能活 ≤15 分钟，这期间新旧都算热号（见 WarmCandidates
+// 只续新窗口、prewarmChats 覆盖两边），所以切换瞬间不会有 chat 撞冷会话。
+func (p *Pool) RotateHotWindow(size int) []string {
+	if size <= 0 {
+		return nil
+	}
+	now := time.Now()
+	today := now.Format("2006-01-02")
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	names := make([]string, 0, len(p.accounts))
+	for _, a := range p.accounts {
+		if a.authDead || a.RefreshToken == "" {
+			continue
+		}
+		// 已知只能密码重登的号先不进环：它现在热了也接不了活。
+		// 不影响修复 —— AdoptCandidates 本来就把它插在最前面。
+		if a.needLogin {
+			continue
+		}
+		if !a.cooldownUntil.IsZero() && now.Before(a.cooldownUntil) {
+			continue
+		}
+		if p.quotaLeft(a, today) == 0 {
+			continue
+		}
+		names = append(names, a.Name)
+	}
+	if len(names) == 0 {
+		p.hotWindow = nil
+		return nil
+	}
+	sort.Strings(names)
+	if size > len(names) {
+		size = len(names)
+	}
+	out := make([]string, 0, size)
+	for i := 0; i < size; i++ {
+		out = append(out, names[(p.rotateOff+i)%len(names)])
+	}
+	p.rotateOff = (p.rotateOff + size) % len(names)
+	p.hotWindow = make(map[string]struct{}, size)
+	for _, n := range out {
+		p.hotWindow[n] = struct{}{}
+	}
+	return out
+}
+
+// HotRotating 是否已启用热池轮换（窗口非空）。
+//
+// 预热覆盖范围要据此放大：换批后的十几分钟里，旧窗口的号还在服务，
+// 它们的会话不能立刻撤，见 prewarmChats。
+func (p *Pool) HotRotating() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return len(p.hotWindow) > 0
+}
+
+// ClearHotWindow 关闭轮换，回到"按排序取前 target"的老行为。
+//
+// 必须有这个出口：配置是热更的，把 hot_rotate_s 改回 0 之后如果窗口不清空，
+// 预热会永远锁死在最后那批号上 —— 表现为"其它号全部慢慢过期"，很难查。
+func (p *Pool) ClearHotWindow() {
+	p.mu.Lock()
+	p.hotWindow = nil
+	p.mu.Unlock()
+}
+
 // HotNames 返回"当前最可能被选中"的账号名（token 活着 + served 升序）。
 //
 // 给"预建会话"用：会话是账号维度资源，必须提前建在**马上要用的号**上，
@@ -1147,6 +1229,7 @@ func (p *Pool) HotNames(limit int) []string {
 		served int64
 		exp    time.Time
 		alive  bool
+		window bool
 	}
 	p.mu.RLock()
 	now := time.Now()
@@ -1156,9 +1239,10 @@ func (p *Pool) HotNames(limit int) []string {
 		if a.authDead || now.Before(a.cooldownUntil) {
 			continue
 		}
+		_, inWin := p.hotWindow[a.Name]
 		rows = append(rows, row{
 			name: a.Name, served: a.served, exp: a.tokenExp,
-			alive: tokenAlive(a, now),
+			alive: tokenAlive(a, now), window: inWin,
 		})
 	}
 	p.mu.RUnlock()
@@ -1170,6 +1254,11 @@ func (p *Pool) HotNames(limit int) []string {
 	// "活着"只是优先，不是过滤）。结果是"最需要预热的时候偏偏不预热"。
 	// 过期的号照旧往下走：调用方会跳过建会话（要凭据），但连接保活不需要。
 	sort.SliceStable(rows, func(i, j int) bool {
+		// 轮换窗口内的号先保活：换批后要先给新窗口建好会话，
+		// 旧窗口的票在这段时间里自然过期，靠活的会话继续服务。
+		if rows[i].window != rows[j].window {
+			return rows[i].window
+		}
 		if rows[i].alive != rows[j].alive {
 			return rows[i].alive
 		}

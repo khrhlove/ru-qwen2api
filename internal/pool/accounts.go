@@ -219,6 +219,13 @@ func (p *Pool) WarmCandidates(target int, window time.Duration, limit int) []str
 		if a.authDead || a.RefreshToken == "" {
 			continue
 		}
+		// 启用轮换后只续当前窗口：旧窗口的票让它自然过期，
+		// 否则窗口永远停在第一批号上，轮换等于没做。
+		if len(p.hotWindow) > 0 {
+			if _, ok := p.hotWindow[a.Name]; !ok {
+				continue
+			}
+		}
 		rows = append(rows, row{
 			name: a.Name, served: a.served, exp: a.tokenExp,
 			inflight: atomic.LoadInt32(&a.inflight), lastUsed: a.lastUsed,

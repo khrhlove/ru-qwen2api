@@ -278,3 +278,106 @@ func TestMissingRefresh(t *testing.T) {
 		t.Fatalf("缺口应只有 a，实际 %d", got)
 	}
 }
+
+// 热池轮换：环的顺序必须稳定（按名字），每次推进一段，走完一圈要能绕回来。
+//
+// 不能按 alive/served 排 —— 那两个值每 tick 都在动，游标切出来的
+// "下一批"会跟着漂移，等于没轮换。
+func TestRotateHotWindowAdvances(t *testing.T) {
+	p := New(config.Default().Pool, []config.Account{
+		{Name: "f", Token: "bearer:f", RefreshToken: "rt-f"},
+		{Name: "e", Token: "bearer:e", RefreshToken: "rt-e"},
+		{Name: "d", Token: "bearer:d", RefreshToken: "rt-d"},
+		{Name: "c", Token: "bearer:c", RefreshToken: "rt-c"},
+		{Name: "b", Token: "bearer:b", RefreshToken: "rt-b"},
+		{Name: "a", Token: "bearer:a", RefreshToken: "rt-a"},
+	}, "")
+
+	w1 := p.RotateHotWindow(2)
+	w2 := p.RotateHotWindow(2)
+	w3 := p.RotateHotWindow(2)
+	w4 := p.RotateHotWindow(2)
+	if fmt.Sprint(w1) != "[a b]" || fmt.Sprint(w2) != "[c d]" || fmt.Sprint(w3) != "[e f]" {
+		t.Fatalf("应按名字顺序推进，实际 %v / %v / %v", w1, w2, w3)
+	}
+	if fmt.Sprint(w4) != "[a b]" {
+		t.Fatalf("走完一圈应绕回 [a b]，实际 %v", w4)
+	}
+	if !p.HotRotating() {
+		t.Fatal("轮换后应标记为已启用")
+	}
+}
+
+// 轮换只认"修得动"的号：失效、没有 refresh_token、额度打满的都不进环。
+func TestRotateHotWindowSkipsUnfixable(t *testing.T) {
+	cfg := config.Default()
+	cfg.Pool.MaxImagePerDay, cfg.Pool.MaxVideoPerDay = 6, 1
+	p := New(cfg.Pool, []config.Account{
+		{Name: "ok1", Token: "bearer:1", RefreshToken: "rt-1"},
+		{Name: "dead", Token: "bearer:2", RefreshToken: "rt-2"},
+		{Name: "noref", Token: "bearer:3"},
+		{Name: "spent", Token: "bearer:4", RefreshToken: "rt-4"},
+	}, "")
+	now := time.Now()
+	today := now.Format("2006-01-02")
+	p.mu.Lock()
+	p.accounts[1].authDead = true
+	p.accounts[3].imageDay, p.accounts[3].imageCount = today, 6
+	p.accounts[3].videoDay, p.accounts[3].videoCount = today, 1
+	p.mu.Unlock()
+
+	got := p.RotateHotWindow(8)
+	if fmt.Sprint(got) != "[ok1]" {
+		t.Fatalf("只应有 ok1 进环，实际 %v", got)
+	}
+}
+
+// 启用轮换后，预热只覆盖当前窗口：否则旧窗口会被无限续期，轮换等于没做。
+func TestWarmCandidatesOnlyWindow(t *testing.T) {
+	p := New(config.Default().Pool, []config.Account{
+		{Name: "a", Token: "bearer:a", RefreshToken: "rt-a"},
+		{Name: "b", Token: "bearer:b", RefreshToken: "rt-b"},
+		{Name: "c", Token: "bearer:c", RefreshToken: "rt-c"},
+	}, "")
+	soon := time.Now().Add(time.Minute)
+	p.mu.Lock()
+	for _, a := range p.accounts {
+		a.tokenExp = soon
+	}
+	p.mu.Unlock()
+
+	// c 不在窗口里，即使它更该续也不该被续。
+	p.RotateHotWindow(2) // 环 [a b c] 取前 2 → a,b
+	names := p.WarmCandidates(8, 3*time.Minute, 8)
+	if fmt.Sprint(names) != "[a b]" {
+		t.Fatalf("应只预热窗口内的 [a b]，实际 %v", names)
+	}
+}
+
+// 换批后的重叠期：新窗口优先保活，旧窗口的会话继续维持（不立刻撤）。
+func TestHotNamesPrefersWindow(t *testing.T) {
+	p := New(config.Default().Pool, []config.Account{
+		{Name: "old", Token: "bearer:a", RefreshToken: "rt-a"}, // 老窗口：过期、served 0（本该排第一）
+		{Name: "new", Token: "bearer:z", RefreshToken: "rt-z"}, // 新窗口：还活着、served 9
+	}, "")
+	p.mu.Lock()
+	p.accounts[0].served = 0
+	p.accounts[0].tokenExp = time.Now().Add(-time.Hour)
+	p.accounts[1].served = 9
+	p.accounts[1].tokenExp = time.Now().Add(10 * time.Minute)
+	// 把 old 移出环，于是 size=1 的窗口只会落到 new 上。
+	p.accounts[0].RefreshToken = ""
+	p.mu.Unlock()
+
+	if got := p.RotateHotWindow(1); fmt.Sprint(got) != "[new]" {
+		t.Fatalf("窗口应只有 new，实际 %v", got)
+	}
+	if names := p.HotNames(1); len(names) != 1 || names[0] != "new" {
+		t.Fatalf("窗口内的号应优先保活，实际 %v", names)
+	}
+	// 关掉轮换后窗口清空，回到 alive/served 排序。
+	p.ClearHotWindow()
+	if p.HotRotating() {
+		t.Fatal("清空后不该还标记为轮换中")
+	}
+}
