@@ -69,6 +69,23 @@ GET  {auth}/api/v2/auths/refresh            → 刷新登录态（Set-Cookie）
 ③ Authorization: Bearer <access_token>  → 所有 /api/v2/* 正常
 ```
 
+🔴 **2026-11-18 改版：①② 已失效，登录必须打到 auth 域**（线上 3000 号"密码正确却登不进去"的真因）：
+
+```
+① POST https://auth.qwen.ai/api/v2/auths/signin      ← 换成 auth 域
+   body 同上
+   → 200 + data.access_token（281 字符，可写）+ Set-Cookie: refresh_token（297 字符）
+   ⇒ 一步到位，**不再需要 ②**
+```
+
+- `{chat}/api/v2/auths/signin` 仍返回 200，但只下发会话 cookie；该 cookie 拿去
+  `/auths/refresh` 恒返回 `401 未授权`（不是"令牌已撤销"，是拒绝）。
+- 响应体里的 `data.token` 只是那张会话 cookie 的 JWT（209 字符）：当 Bearer 发
+  `GET /api/v2/models/` 与 `POST /api/v2/chats/new` 都是 401，**不能当 access_token 用**。
+- 跨域调 auth 域时要带 `x-request-origin` + `sec-fetch-site: same-site`（同上）。
+- 本仓 `SignInSession` 现已优先打 auth 域读 `data.access_token`，
+  拿不到才回落旧的 cookie 换票流程。
+
 🔴 **cookie token 只能读、不能写**（实测同一个 token）：
 
 | 端点 | `Cookie: token=` | `Authorization: Bearer` |

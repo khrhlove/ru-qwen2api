@@ -33,9 +33,18 @@ func (c *Client) SignIn(ctx context.Context, email, password string) (string, er
 //	access  = bearer:<jwt>  业务请求用，实测 TTL 只有 900 秒
 //	session = cookie:<jwt>  signin 签发的会话，用于 /auths/refresh 换新 access
 //
-// 🔴 为什么要留 session：access 15 分钟就过期，而 refresh 只需要这个 cookie。
+// 🔴 为什么要留 session：access 会过期，而 refresh 只需要这张 refresh_token。
 // 以前把它丢掉，等于每次过期都要用密码**从头登录**一次 —— 对 3000 个账号
 // 既慢又是风控暴露面（每次 signin 都可能吃 WAF 挑战页）。
+//
+// 🔴 2026-11-18 上游改版（线上实测，之前几百个号"密码正确却登不进去"的真因）：
+//   - `{chat}/api/v2/auths/signin` **只下发会话 cookie**，而且这个 cookie 已经
+//     换不出 access_token —— `/auths/refresh` 恒返回 `401 未授权`。
+//     继续用它做密码重登 = 100% 失败，还会被误判成"账号需要人工验证"。
+//   - `{auth}/api/v2/auths/signin` 直接返回 `data.access_token`（281 字符，
+//     可写端点）**并**在 Set-Cookie 里下发 `refresh_token`（297 字符），一步到位。
+//
+// 所以先打 auth 域；只有拿不到 access_token 时才回落到旧流程。
 func (c *Client) SignInSession(ctx context.Context, email, password string) (access, session string, err error) {
 	sum := sha256.Sum256([]byte(password))
 	body, err := json.Marshal(map[string]string{
@@ -48,12 +57,36 @@ func (c *Client) SignInSession(ctx context.Context, email, password string) (acc
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
+	authBase := strings.TrimRight(c.cfg.AuthBaseURL, "/")
+	if authBase == "" {
+		authBase = c.base
+	}
+	access, session, err = c.signInAt(ctx, authBase, body)
+	if err == nil && access != "" {
+		return access, session, nil
+	}
+	// 认证类错误（密码错、账号被限）是确定的：别再拿同一份密码去打一次 chat 域，
+	// 那只会把 signin 频率翻倍。
+	if err != nil && KindOf(err) == KindAuth {
+		return "", "", err
+	}
+	// 回落：旧流程（chat 域 signin + 用 token cookie 换票）。
+	return c.signInAt(ctx, c.base, body)
+}
+
+// signInAt 向指定域发一次登录，返回带形态前缀的 access 与 refresh_token。
+//
+// 新流程（auth 域）两样都在响应里；旧流程（chat 域）只有 token cookie，
+// 这时按老办法用它换一次 access_token。
+func (c *Client) signInAt(ctx context.Context, host string, body []byte) (access, session string, err error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		c.base+"/api/v2/auths/signin", bytes.NewReader(body))
+		host+"/api/v2/auths/signin", bytes.NewReader(body))
 	if err != nil {
 		return "", "", err
 	}
-	req.Header = c.buildHeaders("", c.base+"/")
+	// 跨域（auth）时要带 x-request-origin 且 sec-fetch-site=same-site，
+	// 否则上游回 `Bad_Request: Missing origin`。
+	req.Header = c.buildHeadersFor("", c.base+"/", strings.TrimRight(host, "/") != c.base)
 
 	resp, err := c.http.Do(req)
 	if err != nil {
@@ -62,7 +95,16 @@ func (c *Client) SignInSession(ctx context.Context, email, password string) (acc
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 
-	// token 在 Set-Cookie，不在 body —— 先取 cookie，再判 body。
+	if at := signinAccessToken(raw); at != "" {
+		for _, ck := range resp.Cookies() {
+			if ck.Name == "refresh_token" && ck.Value != "" {
+				session = ck.Value
+			}
+		}
+		return ModeBearer + ":" + at, session, nil
+	}
+
+	// 旧流程：token 在 Set-Cookie，body 只有账号资料。
 	var token string
 	for _, ck := range resp.Cookies() {
 		if ck.Name == "token" && ck.Value != "" {
@@ -81,14 +123,27 @@ func (c *Client) SignInSession(ctx context.Context, email, password string) (acc
 	// 🔴 第二段不能省：signin 签发的 cookie token **只能读、不能写** ——
 	// 用它打 /api/v2/chats/new 会得到 Unauthorized（2026-10-28 实测），
 	// 而 /api/v2/models/ 却正常。写端点要的是 refresh 换来的 access_token。
-	// 🔴 refresh_token 在 **refresh 响应**里（Set-Cookie），不在 signin 响应里。
-	// 第一版把 signin 的 token cookie 当成 session 返回，结果一个 refresh_token
-	// 都存不下来，每个号 15 分钟后仍要重登（2026-10-30 线上实测）。
 	at, refreshToken, err := c.doRefresh(ctx, "token="+token)
 	if err != nil {
 		return "", "", err
 	}
 	return ModeBearer + ":" + at, refreshToken, nil
+}
+
+// signinAccessToken 从登录响应体里取新版下发的 access_token。
+//
+// 只认 `data.access_token`：`data.token` 是会话 cookie 的 JWT（只能读、不能写，
+// 2026-11-18 实测当 Bearer 发依然 401），别拿它冒充 access token。
+func signinAccessToken(raw []byte) string {
+	var env struct {
+		Data struct {
+			AccessToken string `json:"access_token"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &env); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(env.Data.AccessToken)
 }
 
 // Refresh 用 cookie 凭据换 access_token（Bearer 形态）。
