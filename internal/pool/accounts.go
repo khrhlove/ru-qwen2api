@@ -396,5 +396,23 @@ func (p *Pool) MissingRefresh() int {
 	return n
 }
 
+// RefreshCapable 还有多少个号能靠 refresh_token 续期（未失效、票没被撤销）。
+//
+// 用途是给"补 refresh_token"这道工序做需求判断：补号的收益是"以后不用密码重登"，
+// 如果池里能续期的号已经够覆盖热池目标，再补就没有收益 —— 而每一次补都是
+// 密码 signin，整条链路最贵、最容易吃风控的一步（2026-11-18 用户口径）。
+func (p *Pool) RefreshCapable() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	n := 0
+	for _, a := range p.accounts {
+		if a.authDead || a.needLogin || a.RefreshToken == "" {
+			continue
+		}
+		n++
+	}
+	return n
+}
+
 // creditDailyAt 「每日赠送」最近一次入账时刻（零值 = 未知）。
 // 放在 accounts.go 里是因为 Account 定义在这里（Snapshot 在 pool.go 读它）。

@@ -102,7 +102,8 @@
       "parallel": 4,
       "batch_max": 48,
       "target_max": 512,
-      "hot_rotate_s": 0
+      "hot_rotate_s": 0,
+      "adopt_per_min": 2
     }
   },
   "// accounts": "凭据两种给法：① token（Barear 或 cookie jar，启动时自动探测形态）；② email+password（signin→refresh 自动换 access_token，失效自动重登）。注意 token 与 password 可同时给，password 用于续期。",

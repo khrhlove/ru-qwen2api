@@ -96,6 +96,9 @@ type Server struct {
 	// 每轮只取前 limit 个就等于永远只热同一小批 —— 后面那 100 多个号
 	// 每次被选中都是冷连接（实测 submit 3~6 秒 vs 945ms）。
 	chatCursor atomic.Uint32
+	// adoptCarry 补 refresh_token 的配额余量（见 adoptBudget）。
+	// 只被保活那一个 goroutine 读写，不需要加锁。
+	adoptCarry float64
 	// egressMu / egress 账号级"出口 IP"缓存（懒探测，见 egress.go）。
 	egressMu sync.Mutex
 	egress   map[string]*egressState

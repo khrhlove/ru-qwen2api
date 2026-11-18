@@ -307,6 +307,13 @@ type Keepalive struct {
 	// AdoptBatch 每轮最多补几个"还没有 refresh_token"的号，默认 12。
 	// 这一步要密码登录（最贵、最易吃 WAF），所以故意摊得很慢。
 	AdoptBatch int `json:"adopt_batch"`
+	// AdoptPerMin 每分钟最多补几个 refresh_token（默认 2）。
+	//
+	// 为什么要按分钟而不是按轮：adopt_batch=12 + tick 20s = 每分钟 36 次密码登录，
+	// 正好把 signin 打成风控（2026-11-18 实测：10 分钟判死 66 个号，主循环从
+	// 20s 被拖到 45~60s，预热和预建会话全被拖慢）。按分钟配额滚动补，
+	// 平时几乎不占带宽；池子够用时连配额都不用花（见 adoptOnce 的门槛）。
+	AdoptPerMin int `json:"adopt_per_min"`
 	// Parallel 单批次内的并发，默认 4。
 	Parallel int `json:"parallel"`
 	// BatchMax 单轮预热上限，默认 48。防止一轮把上游打太热。
@@ -344,6 +351,7 @@ func DefaultKeepalive() Keepalive {
 		TickS:        20,
 		TokenWindowS: 180,
 		AdoptBatch:   12,
+		AdoptPerMin:  2,
 		Parallel:     4,
 		BatchMax:     48,
 		TargetMax:    512,
@@ -365,6 +373,9 @@ func (k Keepalive) Effective() Keepalive {
 	}
 	if k.AdoptBatch <= 0 {
 		k.AdoptBatch = d.AdoptBatch
+	}
+	if k.AdoptPerMin <= 0 {
+		k.AdoptPerMin = d.AdoptPerMin
 	}
 	if k.Parallel <= 0 {
 		k.Parallel = d.Parallel

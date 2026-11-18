@@ -381,3 +381,25 @@ func TestHotNamesPrefersWindow(t *testing.T) {
 		t.Fatal("清空后不该还标记为轮换中")
 	}
 }
+
+// 补 refresh_token 的需求判断：能续期的号（未失效、票没被撤销）有多少。
+func TestRefreshCapable(t *testing.T) {
+	p := New(config.Default().Pool, []config.Account{
+		{Name: "ok", Token: "bearer:a", RefreshToken: "rt-a"},
+		{Name: "dead", Token: "bearer:b", RefreshToken: "rt-b"},
+		{Name: "revoked", Token: "bearer:c", RefreshToken: "rt-c"}, // refresh 401 → needLogin
+		{Name: "none", Token: "bearer:d"},                          // 没有 refresh_token
+	}, "")
+	p.mu.Lock()
+	p.accounts[1].authDead = true
+	p.accounts[2].needLogin = true
+	p.mu.Unlock()
+
+	if got := p.RefreshCapable(); got != 1 {
+		t.Fatalf("只有 ok 能续期，实际 %d", got)
+	}
+	// 失效/撤销的号不该被算成"够用"，否则补号会被永久跳过。
+	if p.RefreshCapable() >= 2 {
+		t.Fatal("失效与撤销的号不能计入能续期的数量")
+	}
+}

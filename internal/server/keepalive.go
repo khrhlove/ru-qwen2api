@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/yuanjie-ai/qwen2api/internal/config"
 	"github.com/yuanjie-ai/qwen2api/internal/upstream"
 )
 
@@ -159,12 +160,28 @@ func (s *Server) rotateHotPool(peak int, last *time.Time) {
 
 // adoptOnce 给"还没 refresh_token 的号"补一张（用密码登录一次）。
 //
-// 只补"接下来会被用到的那批"（served 升序），单轮数量走配置、并发固定 2 ——
-// 目的是把一次性的 3000 次登录摊成后台小流量，而不是再打一次批量登录。
-// 并发刻意不跟 Parallel 走：密码登录是最容易吃 WAF 的一步，快没有意义。
+// 两道闸门，缺一不可（2026-11-18 实测教训）：
+//  1. **需求闸门**：能靠 refresh 续期的号已经够覆盖热池目标时，一个都不补。
+//     补号的收益只是"以后不用密码重登"，池子够用时等于没有收益；
+//     而每次补都是一次 signin —— 全链路最贵、最容易吃风控的动作。
+//  2. **频率闸门**：不够用时也按"每分钟 N 个"滚动补，不按轮爆发。
+//     原来 batch=12 × tick 20s = 36 次/分钟，10 分钟就把 66 个号打成 auth_dead，
+//     还把主循环从 20s 拖到 45~60s（预热、会话预建全被拖慢）。
+//
+// 只补"接下来会被用到的那批"（served 升序）；并发固定 2 —— 密码登录快没有意义。
 func (s *Server) adoptOnce(ctx context.Context, peak int) bool {
 	ka := s.conf().Pool.Keepalive.Effective()
-	names := s.pool.AdoptCandidates(s.warmTarget(peak), ka.AdoptBatch)
+	target := s.warmTarget(peak)
+	if s.pool.RefreshCapable() >= target {
+		// 池子够用：把攒下的配额清零，别等哪天缺号了先补一串。
+		s.adoptCarry = 0
+		return false
+	}
+	budget := s.adoptBudget(ka)
+	if budget <= 0 {
+		return false
+	}
+	names := s.pool.AdoptCandidates(target, budget)
 	if len(names) == 0 {
 		return false
 	}
@@ -187,6 +204,31 @@ func (s *Server) adoptOnce(ctx context.Context, peak int) bool {
 	}
 	wg.Wait()
 	return changed
+}
+
+// adoptBudget 取本轮可以补几个（滚动配额，见 takeAdoptBudget）。
+func (s *Server) adoptBudget(ka config.Keepalive) int {
+	n, carry := takeAdoptBudget(s.adoptCarry, ka.AdoptPerMin, ka.TickS, ka.AdoptBatch)
+	s.adoptCarry = carry
+	return n
+}
+
+// takeAdoptBudget 按"每分钟最多 N 个"折算本轮额度（纯函数，便于单测）。
+//
+// 攒够 1 个才还 1 个：tick=20s、perMin=2 时约每 3 轮补 1 个。
+// 上限是 batch —— 防止主循环被拖慢时攒一大笔，下一轮又打出一串。
+func takeAdoptBudget(carry float64, perMin, tickS, batch int) (int, float64) {
+	if perMin <= 0 || tickS <= 0 || batch <= 0 {
+		return 0, 0
+	}
+	carry += float64(perMin) * float64(tickS) / 60.0
+	if carry > float64(batch) {
+		carry = float64(batch)
+	}
+	// 加极小量再取整：0.666…×3 在浮点里是 1.9999999999999998，
+	// 直接截断会长期少还一个配额（20 分钟少 1 次）。
+	n := int(carry + 1e-9)
+	return n, carry - float64(n)
 }
 
 // maintainRefresh 给"refresh_token 快到期"的号续一张。
@@ -226,7 +268,10 @@ func (s *Server) adoptOne(ctx context.Context, name string) bool {
 	if a == nil || a.Password == "" {
 		return false
 	}
-	cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	// 🔴 超时不能长：这一步跑在保活主循环里，一个死号卡 30 秒
+	// 就等于整轮预热（续期/预建会话/连接保活）全部顺延。失败本来就要退避，
+	// 快失败才是对的（2026-11-18 实测：108 个死号把主循环拖到 45~60s 一轮）。
+	cctx, cancel := context.WithTimeout(ctx, 12*time.Second)
 	defer cancel()
 	access, refresh, err := s.up.SignInSession(upstream.WithAccount(cctx, name), a.Email, a.Password)
 	if err != nil {
