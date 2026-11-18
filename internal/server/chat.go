@@ -346,7 +346,13 @@ func (s *Server) openUpstreamSpec(ctx context.Context, blobBase, model, gear str
 	}
 	var lastErr error
 	lastAcct := ""
-	for attempt := 0; attempt < s.conf().Pool.MaxRotate; attempt++ {
+	// 强制账号时不换号：否则第一次撞并发槽（agentBusyBackoff）就会 attempt++
+	// 重新 PickIdle，永远测不出"同一账号的并发槽"。
+	maxRotate := s.conf().Pool.MaxRotate
+	if force, _ := ctx.Value(forceAcctKey{}).(string); force != "" {
+		maxRotate = 1
+	}
+	for attempt := 0; attempt < maxRotate; attempt++ {
 		var (
 			acct *pool.Account
 			dlg  *dialogEntry
@@ -366,22 +372,26 @@ func (s *Server) openUpstreamSpec(ctx context.Context, blobBase, model, gear str
 		if acct == nil {
 			var ok bool
 			// 调试：X-Force-Account 指定账号（只在 DEBUG_FORCE_ACCOUNT=1 时生效）。
-			// 用途：验证"同一账号的 Agent 并发槽"这类上游行为 —— 正常路径下
-			// PickIdle 总会分到不同号，永远撞不上冲突，也就测不出来。
+			// 🔴 必须用 forced 标记把后面的 PickIdle/Pick 整个跳过 ——
+			// 直接赋值 acct 会被下一行的 PickIdle() 无条件覆盖，force 等于没写
+			// （2026-11-18 踩过：三次测试全部落到不同号，排查了半小时）。
+			forced := false
 			if force, _ := ctx.Value(forceAcctKey{}).(string); force != "" {
 				if a := s.pool.Get(force); a != nil {
-					acct = a
+					acct, forced = a, true
 				}
 			}
-			// Agent 先挑**空闲号**：上游对 agent 是账号级并发槽 = 1，
-			// 而本地 max_inflight_per_account 默认 2。直接 Pick 会选到正在跑
-			// 另一个 agent 的号上，撞 user.too_many_concurrent 再白等 1.2 秒。
-			// 挑不到空闲号才退回普通 Pick —— 宁可等，也不能没号。
-			if spec.ChatType == upstream.AgentChatType {
-				acct, ok = s.pool.PickIdle()
-			}
-			if acct == nil {
-				acct, ok = s.pool.Pick()
+			if !forced {
+				// Agent 先挑**空闲号**：上游对 agent 是账号级并发槽 = 1，
+				// 而本地 max_inflight_per_account 默认 2。直接 Pick 会选到正在跑
+				// 另一个 agent 的号上，撞 user.too_many_concurrent 再白等 1.2 秒。
+				// 挑不到空闲号才退回普通 Pick —— 宁可等，也不能没号。
+				if spec.ChatType == upstream.AgentChatType {
+					acct, ok = s.pool.PickIdle()
+				}
+				if acct == nil {
+					acct, ok = s.pool.Pick()
+				}
 			}
 			if !ok {
 				// 🔴 这里也要带上"最后尝试的号"：只有 1 个号时，第二轮 Pick 就失败，
