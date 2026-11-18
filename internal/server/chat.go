@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -252,7 +253,12 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		s.dialogs.drop(dlgKey)
 		ps.Delta = ""
 	}
-	sd, err := s.openUpstreamSpec(r.Context(), s.blobBase(r), upModel, gear, ps, spec, dlgKey)
+	actx := r.Context()
+	if force := strings.TrimSpace(r.Header.Get("X-Force-Account")); force != "" &&
+		os.Getenv("DEBUG_FORCE_ACCOUNT") == "1" {
+		actx = context.WithValue(actx, forceAcctKey{}, force)
+	}
+	sd, err := s.openUpstreamSpec(actx, s.blobBase(r), upModel, gear, ps, spec, dlgKey)
 	if sd != nil {
 		entry.ChatHit = sd.chatHit
 		entry.ChatMS = sd.chatMS
@@ -317,6 +323,10 @@ func (s *Server) openUpstream(ctx context.Context, blobBase, model, gear, prompt
 // dlgKey 非空 ⇒ 启用**对话粘性**（仅 Agent 模型，见 dialog.go）：
 // 第一轮先试"钉住的号 + 已有 chat_id"换 cache 命中；拿不到就换新号开新会话。
 // 绝不因为"对话正被别人用着"而阻塞或拒绝 —— 那会把一个 11 秒的任务变成 3 分钟。
+// forceAcctKey 调试用：把请求头 X-Force-Account 指定的账号塞进 ctx。
+// 仅在 DEBUG_FORCE_ACCOUNT=1 时才写这个 key（见 handleChat）。
+type forceAcctKey struct{}
+
 func (s *Server) openUpstreamSpec(ctx context.Context, blobBase, model, gear string,
 	ps submitPrompts, spec upstream.ChatSpec, dlgKey string) (*opened, error) {
 	// 模型已下架就别往下走了（2026-11-12 线上：qwen3.5-plus 被上游下架后
@@ -355,6 +365,14 @@ func (s *Server) openUpstreamSpec(ctx context.Context, blobBase, model, gear str
 		}
 		if acct == nil {
 			var ok bool
+			// 调试：X-Force-Account 指定账号（只在 DEBUG_FORCE_ACCOUNT=1 时生效）。
+			// 用途：验证"同一账号的 Agent 并发槽"这类上游行为 —— 正常路径下
+			// PickIdle 总会分到不同号，永远撞不上冲突，也就测不出来。
+			if force, _ := ctx.Value(forceAcctKey{}).(string); force != "" {
+				if a := s.pool.Get(force); a != nil {
+					acct = a
+				}
+			}
 			// Agent 先挑**空闲号**：上游对 agent 是账号级并发槽 = 1，
 			// 而本地 max_inflight_per_account 默认 2。直接 Pick 会选到正在跑
 			// 另一个 agent 的号上，撞 user.too_many_concurrent 再白等 1.2 秒。
