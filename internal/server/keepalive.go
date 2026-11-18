@@ -526,6 +526,14 @@ func (s *Server) refreshTokenOnly(ctx context.Context, name string) bool {
 	defer cancel()
 	access, next, err := s.up.RefreshWithToken(upstream.WithAccount(cctx, name), rt)
 	if err != nil {
+		// 打印 rt 指纹（前 8 + 后 6）：用来判断失败是「票旧」还是「出口不对」。
+		// 与 accounts.json 里的值比对即可 —— 如果指纹不同，说明内存里的票
+		// 是上一次 refresh 换下来、却没落盘的那张（saveIfDue 有 2 分钟节流）。
+		fp := rt
+		if len(fp) > 16 {
+			fp = fp[:8] + "…" + fp[len(fp)-6:]
+		}
+		log.Printf("[qwen2api] %s refresh 失败 rt=%s(%dB) err=%v", name, fp, len(rt), err)
 		s.noteRefreshErr(name, err)
 		s.afterRefreshFailure(name, err)
 		return false

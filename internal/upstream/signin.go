@@ -129,6 +129,17 @@ func (c *Client) RefreshWithToken(ctx context.Context, refreshToken string) (acc
 // doRefresh 发一次 refresh 请求。cookieHeader 是完整的 Cookie 头内容。
 // 返回值 next 是新下发的 refresh_token（首轮才有，后续通常为空）。
 func (c *Client) doRefresh(ctx context.Context, cookieHeader string) (access, next string, err error) {
+	// 🔴 refresh_token 绑定签发时的出口 IP：同一个 token 直连会返回
+	// 「令牌已撤销，请重新登录」，而走该账号的 socks5 出口就是 200。
+	// 2026-11-18 实测：a7 的 rt 走 poolclient-a7 → 200/access 281B；
+	// 同一个 rt 从服务器直连 → 401 令牌已撤销。
+	//
+	// 所以代理开启时必须带账号上下文，宁可在这里明确失败，也不要静默直连
+	// 把一批好好的 refresh_token 全打成「已撤销」。
+	if c.cfg.Proxy.Enabled && AccountOf(ctx) == "" {
+		return "", "", NewErr(KindAuth, "auths/refresh", 0, "",
+			"refresh 缺少账号上下文（refresh_token 绑定出口 IP，直连会被判令牌已撤销）", false)
+	}
 	base := strings.TrimRight(c.cfg.AuthBaseURL, "/")
 	if base == "" {
 		base = c.base
