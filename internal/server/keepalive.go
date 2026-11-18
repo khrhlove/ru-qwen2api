@@ -26,7 +26,15 @@ const (
 	// 它 TTL 是 30 天，留 3 天余量足够吸收停机/抖动。
 	refreshMaintainWindow = 10 * 24 * time.Hour
 	// refreshMaintainBatch 单轮最多保养几个（到期最急的先做）。
-	refreshMaintainBatch = 32
+	//
+	// 🔴 别拍脑袋放大。保养的动作是**密码 signin**（adoptOne），不是 refresh：
+	// 每轮 N 个 × 每 tick 20s ⇒ 每分钟 3N 次 signin。batch=32 就是每天 13.8 万次，
+	// 直接把 signin 打成风控（2026-11-18 实测：改成 32 后满屏 401，auth_dead
+	// 从 98 涨到 100+，refresh_token 一个都补不上）。
+	//
+	// 原值 2 是有账的：refresh TTL 30 天、保养窗口 10 天 ⇒ 每号每 20 天一次
+	// ⇒ 3000 号约 150 次/天，3N=6 次/分钟完全够，还留了大量余量。
+	refreshMaintainBatch = 2
 	// refreshRetryBackoff 续期失败后的静默期。
 	//
 	// 预热带是按 tick 轮转的：不压住失败号，它就会被每轮重新选中，对同一张可能
