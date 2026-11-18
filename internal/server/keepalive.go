@@ -24,9 +24,9 @@ import (
 const (
 	// refreshMaintainWindow refresh_token 剩余不到这个时间就提前换新。
 	// 它 TTL 是 30 天，留 3 天余量足够吸收停机/抖动。
-	refreshMaintainWindow = 3 * 24 * time.Hour
+	refreshMaintainWindow = 10 * 24 * time.Hour
 	// refreshMaintainBatch 单轮最多保养几个（到期最急的先做）。
-	refreshMaintainBatch = 2
+	refreshMaintainBatch = 32
 	// refreshRetryBackoff 续期失败后的静默期。
 	//
 	// 预热带是按 tick 轮转的：不压住失败号，它就会被每轮重新选中，对同一张可能
@@ -514,7 +514,7 @@ func (s *Server) refreshTokenOnly(ctx context.Context, name string) bool {
 	if !s.refreshDue(name, time.Now()) {
 		return false
 	}
-	cctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	cctx, cancel := context.WithTimeout(ctx, 45*time.Second) // 必须比 doRefresh 的 25s 长
 	defer cancel()
 	access, next, err := s.up.RefreshWithToken(upstream.WithAccount(cctx, name), rt)
 	if err != nil {

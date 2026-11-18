@@ -83,7 +83,11 @@ func (r *proxyRouter) RoundTrip(req *http.Request) (*http.Response, error) {
 // 而且宁可漏判（走代理后失败，报错明确）也不能误判（把本该走代理的
 // 上游请求暴露成真实 IP）。
 func isDirectHost(host string) bool {
-	ip := net.ParseIP(strings.Trim(strings.TrimSpace(host), "[]"))
+	h := strings.Trim(strings.TrimSpace(host), "[]")
+	// 注意：auth.qwen.ai 不能直连 —— 实测直连返回 405 + HTML 错误页（该域对机房
+	// IP 有防护），只能继续走 socks5 出口。它的问题是延迟（TTFB 4.4s），
+	// 已通过放宽 refresh 超时预算解决（见 signin.doRefresh）。
+	ip := net.ParseIP(h)
 	if ip == nil {
 		return false
 	}

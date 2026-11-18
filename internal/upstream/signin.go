@@ -133,11 +133,13 @@ func (c *Client) doRefresh(ctx context.Context, cookieHeader string) (access, ne
 	if base == "" {
 		base = c.base
 	}
-	// 10s 是这次 refresh 的**真实预算**：正常只要几百毫秒，已经几十倍余量。
-	// 🔴 别写成 30s —— 调用方（预热 15s / 请求 ctx）比它短，内层永远轮不到，
-	// 等于没写；而 15s 先放弃的后果不是"失败"，是"结果未知"：上游可能已经
-	// 执行并把旧 refresh_token 作废了，我们却没读到新票（2026-11-02 线上实测）。
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	// 超时预算 25s：经 socks5 出口到 auth 域实测 TTFB 4.4s（本机直连 0.15s，
+	// 但该域对机房 IP 直连返回 405，只能走代理），再叠加并发争抢，10s 必然超时。
+	// 2026-11-18 线上实测：原 10s 下 refresh 几乎全失败（满屏 context deadline
+	// exceeded），refresh_token 因此永远是空的，账号只能靠密码重登。
+	//
+	// 🔴 调用方的 ctx 必须比它长，否则内层预算用不上（见 refreshTokenOnly 的 45s）。
+	ctx, cancel := context.WithTimeout(ctx, 25*time.Second)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/api/v2/auths/refresh", nil)
