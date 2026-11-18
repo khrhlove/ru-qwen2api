@@ -17,13 +17,13 @@ import (
 
 // acctStats 账号池汇总（面板顶部的统计卡与筛选 chip 用）。
 type acctStats struct {
-	Total        int `json:"total"`
-	Ready        int `json:"ready"`
-	Cooling      int `json:"cooling"`
-	Dead         int `json:"dead"`
+	Total   int `json:"total"`
+	Ready   int `json:"ready"`
+	Cooling int `json:"cooling"`
+	Dead    int `json:"dead"`
 	// NeedLogin 票被撤销、正在等后台密码重登的号（不是坏号，但还不可用）。
-	NeedLogin int `json:"need_login"`
-	Exhausted int `json:"exhausted"`
+	NeedLogin    int `json:"need_login"`
+	Exhausted    int `json:"exhausted"`
 	ImgLeft      int `json:"img_left"`
 	Credits      int `json:"credits"`
 	CreditsKnown int `json:"credits_known"`
@@ -33,6 +33,13 @@ type acctStats struct {
 	TokenFresh int `json:"token_fresh"`
 	// RefreshExpiring refresh_token 剩余不足 3 天、待保养的账号数。
 	RefreshExpiring int `json:"refresh_expiring"`
+	// Hot 热池：状态可用、且 access token 剩余 >2 分钟（现在就能接流量）。
+	// 这个数比 Ready 更接近真实并发能力：可用但票过期的号要先续期才用得上。
+	Hot int `json:"hot"`
+	// TokenExpired access token 已过期（还要靠 refresh / 密码重登才能用）。
+	TokenExpired int `json:"token_expired"`
+	// TokenUnknown 看不出凭据寿命（非 JWT 的长期凭据）。
+	TokenUnknown int `json:"token_unknown"`
 }
 
 // acctStatusOf 与前端 acctStatus 同口径：额度用尽算独立状态。
@@ -54,6 +61,21 @@ func acctStatusOf(v pool.View, videoMin int) string {
 		return "exhausted"
 	}
 	return "ready"
+}
+
+// tokenHotMarginS 与 pool 选号的 pickTokenMargin 对齐：剩不到 2 分钟的票
+// 等于"发出去就可能在中途过期"，不算热号。
+const tokenHotMarginS = 120
+
+// tokenAlive access token 是否还没过期（面板口径，用来回答"这张票现在有效吗"）。
+func tokenAlive(v pool.View) bool { return v.TokenKnown && v.TokenLeftS > 0 }
+
+// tokenHot access token 是否还够热（与选号优先级同一口径）。
+func tokenHot(v pool.View) bool { return v.TokenKnown && v.TokenLeftS > tokenHotMarginS }
+
+// acctHot 热池成员：状态可用且票还热 —— 才是真的能立刻被选中接流量。
+func acctHot(v pool.View, videoMin int) bool {
+	return acctStatusOf(v, videoMin) == "ready" && tokenHot(v)
 }
 
 // summarize 汇总整池（不含分页）。
@@ -87,8 +109,17 @@ func summarize(views []pool.View, videoMin int) acctStats {
 		if v.HasRefresh {
 			st.RefreshKnown++
 		}
-		if v.TokenLeftS > 0 {
-			st.TokenFresh++
+		if v.TokenKnown {
+			if v.TokenLeftS > 0 {
+				st.TokenFresh++
+			} else {
+				st.TokenExpired++
+			}
+		} else {
+			st.TokenUnknown++
+		}
+		if acctHot(v, videoMin) {
+			st.Hot++
 		}
 		if v.RefreshKnown && v.RefreshLeftS < 3*86400 {
 			st.RefreshExpiring++
@@ -113,6 +144,9 @@ func (p *Panel) handleAccounts(w http.ResponseWriter, r *http.Request) {
 	}
 	search := strings.ToLower(strings.TrimSpace(q.Get("q")))
 	state := strings.TrimSpace(q.Get("state"))
+	// token 是独立于 state 的第二个维度：状态"可用"的号里，票过期的一堆，
+	// 面板上必须能单独把它们挑出来（否则分不清"能用"和"能马上用"）。
+	token := strings.TrimSpace(q.Get("token"))
 	sortKey := strings.TrimSpace(q.Get("sort"))
 
 	views := p.b.Pool().Snapshot()
@@ -134,8 +168,29 @@ func (p *Panel) handleAccounts(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 		}
-		if state != "" && state != "all" && acctStatusOf(v, videoMin) != state {
-			continue
+		if state != "" && state != "all" {
+			if state == "hot" {
+				// 热池是"可用 + 票热"的预设组合，不是第三种状态。
+				if !acctHot(v, videoMin) {
+					continue
+				}
+			} else if acctStatusOf(v, videoMin) != state {
+				continue
+			}
+		}
+		switch token {
+		case "alive":
+			if !tokenAlive(v) {
+				continue
+			}
+		case "expired":
+			if !v.TokenKnown || v.TokenLeftS > 0 {
+				continue
+			}
+		case "unknown":
+			if v.TokenKnown {
+				continue
+			}
 		}
 		filtered = append(filtered, v)
 	}
@@ -146,6 +201,13 @@ func (p *Panel) handleAccounts(w http.ResponseWriter, r *http.Request) {
 			return v.CreditBalance
 		}
 		return -1
+	}
+	// 票寿命排序键：未知的当作最小（降序垫底、升序置顶 —— 都需要被看见）。
+	tokKey := func(v pool.View) int {
+		if !v.TokenKnown {
+			return -1 << 30
+		}
+		return v.TokenLeftS
 	}
 	rank := map[string]int{"dead": 0, "need_login": 1, "cooling": 2, "exhausted": 3, "ready": 4}
 	sort.SliceStable(filtered, func(i, j int) bool {
@@ -161,6 +223,16 @@ func (p *Panel) handleAccounts(w http.ResponseWriter, r *http.Request) {
 			return a.Served > b.Served
 		case "name":
 			return a.Name < b.Name
+		case "token_desc":
+			if ka, kb := tokKey(a), tokKey(b); ka != kb {
+				return ka > kb
+			}
+			return bal(a) > bal(b)
+		case "token_asc":
+			if ka, kb := tokKey(a), tokKey(b); ka != kb {
+				return ka < kb
+			}
+			return bal(a) > bal(b)
 		}
 		ra, rb := rank[acctStatusOf(a, videoMin)], rank[acctStatusOf(b, videoMin)]
 		if ra != rb {
