@@ -164,12 +164,37 @@ func (p *Pool) TokenExpiry(name string) (time.Time, bool) {
 	return a.tokenExp, true
 }
 
+// quotaLeft 今天还能接几类"烧上游配额"的活：生图、生视频（0~2）。
+//
+// 为什么要它（2026-11-18 用户口径：每个号有额度限制）：
+// 热池如果只看 served，同一批号会一直热到把每日额度打满；打满之后选号只能
+// 现找一个冷号、在请求路径上续期 —— 额度其实是"被动摊开"的，每越过一批
+// 就多付一次 refresh。把剩余维度纳入热池排序，等于让打满的号**主动让位**，
+// 热池跟着额度消耗自然轮换。
+//
+// 额度 0 = 不限，永远算可用；日期不是今天就等于今天没干过活
+// （真正的清零发生在选号时，这里只读不算）。
+func (p *Pool) quotaLeft(a *Account, today string) int {
+	cfg := p.conf()
+	n := 0
+	if cfg.MaxImagePerDay <= 0 || a.imageDay != today || a.imageCount < cfg.MaxImagePerDay {
+		n++
+	}
+	if cfg.MaxVideoPerDay <= 0 || a.videoDay != today || a.videoCount < cfg.MaxVideoPerDay {
+		n++
+	}
+	return n
+}
+
 // WarmCandidates 返回"接下来会被用到、且凭据快过期"的账号名。
 //
 // 排序与 pick **同源**（都按"token 活着优先 → served 升序"），但活着的那批
 // 内部按**过期时间升序**：它们正在服务，越快过期越该先续，否则热号会在流量上
 // 过期，续期就落到了请求路径（正是预热要避免的事）。
 // 活着的不足 target 时，用 served 升序的过期号补齐 —— 那正是 pick 接下来要用的。
+//
+// 今日额度打满的号排在**所有号之后**（见 quotaLeft）：它接不了图/视频，
+// 把 refresh 预算让给还没干活的号，热池因此跟着额度消耗自然轮换。
 //
 // target 由调用方按当前流量估算；window 是"多快过期算快过期"；
 // limit 是单轮上限（防止一次刷太多把上游打热）。
@@ -184,10 +209,12 @@ func (p *Pool) WarmCandidates(target int, window time.Duration, limit int) []str
 		lastUsed time.Time
 		exp      time.Time
 		alive    bool
+		quota    int
 	}
 	p.mu.RLock()
 	rows := make([]row, 0, len(p.accounts))
 	now := time.Now()
+	today := now.Format("2006-01-02")
 	for _, a := range p.accounts {
 		if a.authDead || a.RefreshToken == "" {
 			continue
@@ -196,6 +223,7 @@ func (p *Pool) WarmCandidates(target int, window time.Duration, limit int) []str
 			name: a.Name, served: a.served, exp: a.tokenExp,
 			inflight: atomic.LoadInt32(&a.inflight), lastUsed: a.lastUsed,
 			alive: tokenAlive(a, now),
+			quota: p.quotaLeft(a, today),
 		})
 	}
 	p.mu.RUnlock()
@@ -203,6 +231,10 @@ func (p *Pool) WarmCandidates(target int, window time.Duration, limit int) []str
 	// 🔴 必须与 pick 同序，否则预热到的不是下一步要用的那批
 	// （踩过：这里按名字排、选号按插入顺序排，结果热号和冷号完全错位）。
 	sort.SliceStable(rows, func(i, j int) bool {
+		// 额度还剩几类活，多的先热：打满的号先让位，热池跟着额度轮换。
+		if rows[i].quota != rows[j].quota {
+			return rows[i].quota > rows[j].quota
+		}
 		if rows[i].alive != rows[j].alive {
 			return rows[i].alive
 		}

@@ -103,6 +103,69 @@ func TestWarmCandidatesSkipsFreshTokens(t *testing.T) {
 	}
 }
 
+// 每个号有每日额度：图/视频都打满的号接不了这两类活，
+// 热池位置要让给今天还没干活的号 —— 这就是"额度驱动的热池轮换"。
+//
+// 不这么做的话，同一批号会热到打满额度，之后每个越过额度的请求都要在
+// 请求路径上现找一个冷号续期（多付一次 refresh）。
+func TestWarmCandidatesYieldsToUnspentAccounts(t *testing.T) {
+	cfg := config.Default()
+	cfg.Pool.MaxImagePerDay = 6
+	cfg.Pool.MaxVideoPerDay = 1
+	p := New(cfg.Pool, []config.Account{
+		{Name: "burned", Token: "bearer:a", RefreshToken: "rt-a"},
+		{Name: "fresh", Token: "bearer:b", RefreshToken: "rt-b"},
+	}, "")
+
+	now := time.Now()
+	today := now.Format("2006-01-02")
+	p.mu.Lock()
+	// burned：票还活着且马上过期（按老排序它会被优先续），但额度已打满。
+	p.accounts[0].tokenExp = now.Add(time.Minute)
+	p.accounts[0].imageDay, p.accounts[0].imageCount = today, cfg.Pool.MaxImagePerDay
+	p.accounts[0].videoDay, p.accounts[0].videoCount = today, cfg.Pool.MaxVideoPerDay
+	// fresh：票已过期（按老排序它排在后面），但今天一点额度都没用。
+	p.accounts[1].tokenExp = now.Add(-time.Hour)
+	p.accounts[1].served = 0
+	p.mu.Unlock()
+
+	if names := p.WarmCandidates(1, 3*time.Minute, 8); len(names) != 1 || names[0] != "fresh" {
+		t.Fatalf("额度打满的号应让位给还没干活的号，实际 %v", names)
+	}
+}
+
+func TestQuotaLeft(t *testing.T) {
+	cfg := config.Default()
+	cfg.Pool.MaxImagePerDay = 6
+	cfg.Pool.MaxVideoPerDay = 1
+	p := New(cfg.Pool, []config.Account{{Name: "a", Token: "bearer:a"}}, "")
+	a := p.accounts[0]
+	today := time.Now().Format("2006-01-02")
+	yesterday := time.Now().Add(-24 * time.Hour).Format("2006-01-02")
+
+	if got := p.quotaLeft(a, today); got != 2 {
+		t.Fatalf("没干活应剩 2 类，实际 %d", got)
+	}
+	a.imageDay, a.imageCount = today, 6
+	if got := p.quotaLeft(a, today); got != 1 {
+		t.Fatalf("图打满应剩 1 类（视频），实际 %d", got)
+	}
+	a.videoDay, a.videoCount = today, 1
+	if got := p.quotaLeft(a, today); got != 0 {
+		t.Fatalf("两类都打满应为 0，实际 %d", got)
+	}
+	// 跨天后自动恢复：日期不是今天 ⇒ 视为没干过活（清零发生在选号时）。
+	if got := p.quotaLeft(a, yesterday); got != 2 {
+		t.Fatalf("跨天应恢复 2 类，实际 %d", got)
+	}
+	// 额度 0 = 不限，永远算可用。
+	cfg.Pool.MaxImagePerDay, cfg.Pool.MaxVideoPerDay = 0, 0
+	p.SetConfig(cfg.Pool)
+	if got := p.quotaLeft(a, today); got != 2 {
+		t.Fatalf("不限额时应恒为 2，实际 %d", got)
+	}
+}
+
 func TestWarmCandidatesRespectsLimit(t *testing.T) {
 	accs := make([]config.Account, 0, 10)
 	for i := 0; i < 10; i++ {
