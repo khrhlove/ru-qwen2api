@@ -31,7 +31,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -245,10 +244,7 @@ func (s *Server) createVideo(w http.ResponseWriter, r *http.Request, plan *video
 	// warnings 走响应头（URL 编码保证 ASCII 可传）。
 	// 🔴 之前 plan.Warnings 只收集不输出 —— README 写着"记 X-Qwen2API-Warnings"
 	// 但成功路径从没设置过，客户端永远看不到降级信息。
-	if len(plan.Warnings) > 0 {
-		w.Header().Set("X-Qwen2API-Warnings",
-			url.QueryEscape(strings.Join(plan.Warnings, "\n")))
-	}
+	setMediaWarnings(w, plan.Warnings)
 
 	// 创建回包**只有 id**。受理 ≠ 成功，这是协议里最容易被「优化」坏的一条。
 	writeJSON(w, http.StatusOK, map[string]string{"id": rec.ID})
@@ -587,7 +583,8 @@ func videoTaskPayload(rec *videoRecord) map[string]any {
 		out["content"] = content
 		out["error"] = nil
 	} else {
-		out["content"] = map[string]any{"video_url": nil}
+		// 两个键都要在：按「键是否存在」判定的客户端会在终态切换时踩空。
+		out["content"] = map[string]any{"video_url": nil, "last_frame_url": nil}
 		if rec.Status == VideoStatusFailed {
 			code := rec.ErrCode
 			if code == "" {
@@ -639,7 +636,6 @@ func videoTaskPayload(rec *videoRecord) map[string]any {
 // videoWatchOnce 一轮巡检：刷新未终态任务，并推送回调。
 func (s *Server) videoWatchOnce() {
 	for _, rec := range s.videos.Pending() {
-		before := rec.Status
 		rec = s.refreshVideo(rec, false)
 		if rec.CallbackURL == "" {
 			continue
@@ -650,9 +646,7 @@ func (s *Server) videoWatchOnce() {
 		case VideoStatusQueued, VideoStatusCancelled:
 			continue
 		}
-		if rec.CallbackState == rec.Status && rec.Status == before {
-			continue
-		}
+		// 同一状态只推一次；推失败由 CallbackTries 计数兜底（最多 3 次）。
 		if rec.CallbackState == rec.Status {
 			continue
 		}
@@ -703,9 +697,7 @@ func (s *Server) rejectVideo(w http.ResponseWriter, r *http.Request, rej *videoR
 	if rej == nil {
 		rej = rejectInvalid("", "请求不合法")
 	}
-	if len(rej.Warnings) > 0 {
-		w.Header().Set("X-Qwen2API-Warnings", url.QueryEscape(strings.Join(rej.Warnings, "\n")))
-	}
+	setMediaWarnings(w, rej.Warnings)
 	entry.Status = rej.Status
 	entry.Error = rej.Message
 	entry.DurationMS = time.Since(start).Milliseconds()

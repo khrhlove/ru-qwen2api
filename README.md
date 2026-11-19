@@ -209,11 +209,33 @@ curl -s localhost:8400/v1/images/generations \
 |---|---|
 | `prompt` | 无 `image` 时必填 |
 | `image` | `str` 或 `str[]`（URL / data URI / 裸 base64），最多 20 张。非空即走**图生图**：以 `chat_type=image_edit` 提交，参考图同样走 **URL 直通 / 本地 blob**（不再过被 WAF 挡住的 STS）。实测：白底黑字 `HELLO42` + 「背景改蓝、保留文字」⇒ 产物 2752×1376 蓝底黑字（宽高比与原图一致，是真编辑不是重画） |
-| `mask` | 没有 `image` 时传了就是 400（面门收下但不转发——上游无 mask 语义，绝不假装 inpaint） |
+| `mask` | 没有 `image` 时传了就是 400；带 `image` 时收下但不转发——上游无 inpaint 语义，**响应头 `X-Qwen2API-Warnings` 会明确说明** |
 | `n` | 非法值归一为 1；上限 4（每张都是一次独立上游调用 + 一次配额） |
-| `size` | `1024x1024` / `1:1` / `auto` 都收，内部映射成上游 5 档比例 |
+| `size` | `1024x1024` / `1:1` / `auto` 都收，内部映射成上游 5 档比例；**有损吸附或无法映射时进警告头**（吸附会改构图，不能静默） |
+| `watermark` | 与视频同语义（方舟原生）：`true` = 保留上游那层 Qwen 图层；`false` / 缺省 = 去水印（受 `storage.image_strip_watermark` 控制）。去水印没启用时 `false` 无法兑现，会进警告头 |
 | `response_format` | `url`（默认）/ `b64_json`；不认识的值视为未指定，不报错 |
-| `quality` / `style` / `user` | 收下但不影响上游（qwen 没有这些概念，不假装支持） |
+| `quality` / `style` / `user` | 收下但不影响上游（qwen 没有这些概念）；`quality` / `style` 会进警告头，`user` 是纯标识不做提示 |
+| 其他任意键 | 未识别字段一律收下并进警告头——上游没有 extras 通道，不能假装生效 |
+
+> 🔴 **参考图在提交前做「可渲染性」校验**（data URI / 裸 base64 会完整解码一次）：
+> 不是图片或像素数据被截断 ⇒ **400 `invalid_request_error`（`param=image`）**，
+> 不选号、不建会话、不消耗额度。校验只拦「渲染不了」的两种情况，
+> **不拦 checksum 瑕疵** —— macOS ImageIO / 浏览器能渲染的一律放行（Go 的解码器更严格，
+> 拿它当准入门会误杀真实可用的图）。
+>
+> 2026-11-19 用 image-adapter 探针实测的漏口：修复前 15 条免费层探针里有 13 条坏图请求
+> **各自消耗了一个不同账号**（建会话 + 打上游），上下游返回的
+> `image_edit_input_unreadable` / `internal_error` 又被包装成 `502 稍后重试` ——
+> 客户端只会拿同一张坏图继续重试。修复后这类请求在本地就 400，且**不换号、不记账号失败**。
+
+> **`X-Qwen2API-Warnings` 在图片路径同样生效**（与视频共用一套语义）：值是 URL 编码的多条文案、
+> 换行分隔。它承载的只有一类信息——**「收到了但没生效 / 有损降级」**。
+> 这是 image-adapter 不变量 2 的落点：既不 400（会打断正常调用），也不静默（调用方以为参数生效了）。
+>
+> **`/v1/images/edits` 是同一套字段的 multipart 前门**：`prompt` 与 `image`（或 `image[]`）必填，
+> `model` / `response_format` / `watermark` 以普通表单字段传（布尔写 `true` / `false`）。
+> **水印策略与 generations 完全一致**：默认去水印（失败不降级），`watermark=true` 才保留上游那层。
+> 早先 edits 不做后处理，同一个模态两个入口交付带水印 / 无水印两种产物 —— 已修正。
 
 > 🔴 `prompt` **原样发给上游**，不要自己加「请画一张图：」之类的包装。t2i 是显式类型，
 > 上游按 `chat_type` 分派；被改写的 prompt 会让它静默空转（实测 200s 无内容）。

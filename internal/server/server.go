@@ -10,6 +10,7 @@ import (
 	stdlog "log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"sort"
 	"strings"
@@ -499,6 +500,18 @@ func retryAfter(w http.ResponseWriter, code int) {
 	case http.StatusGatewayTimeout, http.StatusServiceUnavailable:
 		w.Header().Set("Retry-After", "5")
 	}
+}
+
+// setMediaWarnings 把「降级 / 未生效」信息写进 X-Qwen2API-Warnings。
+//
+// URL 编码是因为 HTTP 头只能是可见 ASCII，而文案是中文；换行分隔保证多条
+// 可逐条拆开（客户端 url.QueryUnescape 后按 \n 切）。
+// 图片与视频共用同一套头语义，避免两个模态各发明一种"公告"方式。
+func setMediaWarnings(w http.ResponseWriter, warns []string) {
+	if len(warns) == 0 {
+		return
+	}
+	w.Header().Set("X-Qwen2API-Warnings", url.QueryEscape(strings.Join(warns, "\n")))
 }
 
 // itoa 小整数转字符串（内联友好，热路径上不必走 fmt）。

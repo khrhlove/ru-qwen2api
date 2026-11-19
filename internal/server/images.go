@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -57,6 +58,49 @@ type ImageRequest struct {
 	ResponseFormat string `json:"response_format"`
 	// Thinking 思考档位（图片场景建议 fast，省时间）。
 	Thinking string `json:"thinking"`
+	// Watermark 是否要成片带水印（方舟同名语义）。
+	//
+	// 🔴 这是**交付策略**，不是透传参数：上游（Qwen）强制加水印且无开关，
+	// 所以 true = 原样交付上游那层，false / 缺省 = 后处理去掉。
+	// 与视频路径同语义 —— 同一个网关两种读法必然出错。
+	Watermark *bool `json:"watermark,omitempty"`
+	// Extras 未识别的顶层键（vendor extras）。
+	//
+	// 本上游是「对话里调 image_gen 工具」，没有 extras 通道 ⇒ 收下也无法下传，
+	// 必须进 X-Qwen2API-Warnings 让调用方看见，否则就是「字段没兑现却回 200」。
+	Extras map[string]any `json:"-"`
+}
+
+// imageKnownKeys 已识别的顶层键 —— 其余全部进 Extras。
+var imageKnownKeys = map[string]struct{}{
+	"prompt": {}, "model": {}, "image": {}, "mask": {}, "n": {},
+	"size": {}, "quality": {}, "style": {}, "user": {},
+	"response_format": {}, "thinking": {}, "watermark": {},
+}
+
+// collectImageExtras 收集未识别的顶层键。
+//
+// 两遍解码（先 map 再 struct）与视频请求同口径：struct 解码天然丢键，
+// 而「丢了什么」正是要告诉调用方的东西。
+func collectImageExtras(raw []byte) map[string]any {
+	var top map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &top); err != nil {
+		return nil
+	}
+	var out map[string]any
+	for k, v := range top {
+		if _, known := imageKnownKeys[k]; known {
+			continue
+		}
+		if out == nil {
+			out = map[string]any{}
+		}
+		var val any
+		if err := json.Unmarshal(v, &val); err == nil {
+			out[k] = val
+		}
+	}
+	return out
 }
 
 // imageRefs 解析 image 字段：字符串 / 字符串数组 / null / []。
@@ -94,6 +138,21 @@ func (r ImageRequest) imageRefs() ([]string, error) {
 // 也一起打回，错误文案还写着"mask 没有 image"—— 与文档自相矛盾。
 func maskWithoutImage(mask string, refs []string) bool {
 	return strings.TrimSpace(mask) != "" && len(refs) == 0
+}
+
+// formBool 读表单里的布尔字段（multipart / urlencoded 通用）。
+//
+// 认不出的值按「未指定」处理，不报错 —— 与 response_format 同口径：
+// 一个传输层的写法差异不该否掉一次完全可满足的生成。
+func formBool(r *http.Request, key string) (val bool, set bool) {
+	v := strings.TrimSpace(r.FormValue(key))
+	if v == "" {
+		return false, false
+	}
+	if b, ok := parseFlagBool(v); ok {
+		return b, true
+	}
+	return false, false
 }
 
 // ImageDatum 单张结果。
@@ -164,6 +223,86 @@ func sizeToRatio(size string) string {
 	return best
 }
 
+// sizeExact 判断像素写法是否**精确**等于某一档比例。
+//
+// 用来区分「本来就这个比例」与「被吸附过去的」：后者改变了构图，
+// 必须在响应头里如实告知，不能让它看起来像生效了。
+func sizeExact(size, ratio string) bool {
+	var w, h int
+	if _, err := fmt.Sscanf(strings.ToLower(strings.TrimSpace(size)), "%dx%d", &w, &h); err != nil || w <= 0 || h <= 0 {
+		return false
+	}
+	switch ratio {
+	case "1:1":
+		return w == h
+	case "4:3":
+		return w*3 == h*4
+	case "3:4":
+		return w*4 == h*3
+	case "16:9":
+		return w*9 == h*16
+	case "9:16":
+		return w*16 == h*9
+	}
+	return false
+}
+
+// watermarkWarn 判断「明确要求不含水印」能否兑现。
+//
+// 可兑现的前提是去水印链路真的开着（storage 配好 + image_strip_watermark）。
+// 不满足时必须警告：调用方要的是干净片，拿到带水印的成品而无人告知，
+// 比直接报错更糟 —— 它会被当成"上游这次画得奇怪"。
+func watermarkWarn(stripEnabled bool) string {
+	if stripEnabled {
+		return ""
+	}
+	return "watermark=false 无法兑现：图片去水印未启用（storage 未配置或 image_strip_watermark=false），成片仍带水印"
+}
+
+// imageWarnings 列出「收下了但没兑现」的字段。
+//
+// 🔴 判据与视频一致：不静默降级。上游没有 inpaint / 质量档位 / extras 通道，
+// 这些字段既不能 400（会打断正常调用），也不能当没发生（调用方以为生效了）。
+// 折中只有一个正确位置：响应头，逐条写清「哪个字段、为什么没生效」。
+func imageWarnings(req *ImageRequest, ratio string, stripEnabled bool) []string {
+	var ws []string
+	if req.Watermark != nil && !*req.Watermark {
+		if w := watermarkWarn(stripEnabled); w != "" {
+			ws = append(ws, w)
+		}
+	}
+	if s := strings.TrimSpace(req.Size); s != "" && !strings.EqualFold(s, "auto") {
+		switch {
+		case ratio == "":
+			ws = append(ws, fmt.Sprintf(
+				"size=%q 无法映射到上游 5 档比例（1:1/4:3/3:4/16:9/9:16），已交由上游默认", s))
+		case !strings.Contains(s, ":") && !sizeExact(s, ratio):
+			ws = append(ws, fmt.Sprintf(
+				"size=%q 已按最接近比例吸附为 %s（上游只接受固定档位，构图会变）", s, ratio))
+		}
+	}
+	if strings.TrimSpace(req.Mask) != "" {
+		ws = append(ws, "mask 已收下但未生效：上游没有 inpaint 语义，这不是局部重绘")
+	}
+	if q := strings.TrimSpace(req.Quality); q != "" && !strings.EqualFold(q, "auto") {
+		ws = append(ws, fmt.Sprintf("quality=%q 未生效：上游没有质量档位", q))
+	}
+	if st := strings.TrimSpace(req.Style); st != "" {
+		ws = append(ws, fmt.Sprintf("style=%q 未生效：上游没有风格档位", st))
+	}
+	if len(req.Extras) > 0 {
+		keys := make([]string, 0, len(req.Extras))
+		for k := range req.Extras {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			ws = append(ws, fmt.Sprintf("字段 %q 在本上游没有对应实现，未生效", k))
+		}
+	}
+	return ws
+}
+
 // buildImagePrompt 处理 prompt。
 //
 // 🔴 2026-10-28 实测订正：**什么都不要加**。t2i 是显式类型（chat_type + extra.meta.model
@@ -184,14 +323,24 @@ func (s *Server) handleImages(w http.ResponseWriter, r *http.Request) {
 		ClientIP: clientIP(r), UserAgent: truncateUA(r.UserAgent()),
 	}
 
+	rawBody, readErr := io.ReadAll(io.LimitReader(r.Body, maxRequestBody))
+	if readErr != nil {
+		entry.Status = http.StatusBadRequest
+		entry.Error = "读取请求体: " + readErr.Error()
+		s.addReq(&entry)
+		writeError(w, http.StatusBadRequest, "invalid_request_error", "请求体解析失败: "+readErr.Error())
+		return
+	}
 	var req ImageRequest
-	if err := json.NewDecoder(io.LimitReader(r.Body, maxRequestBody)).Decode(&req); err != nil {
+	if err := json.Unmarshal(rawBody, &req); err != nil {
 		entry.Status = http.StatusBadRequest
 		entry.Error = "解析请求体: " + err.Error()
 		s.addReq(&entry)
 		writeError(w, http.StatusBadRequest, "invalid_request_error", "请求体解析失败: "+err.Error())
 		return
 	}
+	// 未识别键：收下 + 告知，不静默丢（见 imageWarnings）。
+	req.Extras = collectImageExtras(rawBody)
 	refs, refErr := req.imageRefs()
 	if refErr != nil {
 		entry.Status = http.StatusBadRequest
@@ -214,7 +363,7 @@ func (s *Server) handleImages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// 上游没有 inpaint 语义：带图时 mask 收下但不转发（文档契约）。
-	// 不静默 —— 日志留痕，免得以后有人以为"mask 生效了"。
+	// 日志只是给我们看的；对调用方的信号在 X-Qwen2API-Warnings（见 imageWarnings）。
 	if strings.TrimSpace(req.Mask) != "" {
 		log.Printf("[qwen2api] 图片请求带了 mask，但上游无 inpaint 语义，已忽略")
 	}
@@ -257,6 +406,14 @@ func (s *Server) handleImages(w http.ResponseWriter, r *http.Request) {
 	ratio := sizeToRatio(req.Size)
 	prompt := buildImagePrompt(req.Prompt, ratio)
 
+	// watermark：true = 要水印（原样交付上游那层）；false / 缺省 = 去水印。
+	// 默认关是适配层的纪律 —— 上游强制加水印，想要干净片必须显式后处理。
+	wantWatermark := req.Watermark != nil && *req.Watermark
+
+	// 降级与未生效信息一律进响应头：日志是给我们看的，调用方看不到。
+	st := s.conf().Storage
+	setMediaWarnings(w, imageWarnings(&req, ratio, st.IsEnabled() && st.ImageStripWatermark))
+
 	entry.Model = requested
 	entry.RefImages = len(refs)
 	// 图片是计费动作：n>1 时逐张串行，不并发轰同一账号。
@@ -287,11 +444,18 @@ func (s *Server) handleImages(w http.ResponseWriter, r *http.Request) {
 			// 🔴 失败**不降级**：宁可这张不产出，也不交带水印的图。
 			// 成功时顺带拿到 PNG 字节，b64_json 模式直接用，省一次回源下载。
 			var polished []byte
-			u, polished, perr := s.polishImage(r.Context(), u)
-			if perr != nil {
-				log.Printf("[qwen2api] 图片去水印失败（该张不产出）: %v", perr)
-				lastErr = perr
-				continue
+			if !wantWatermark {
+				var perr error
+				u, polished, perr = s.polishImage(r.Context(), u)
+				if perr != nil {
+					log.Printf("[qwen2api] 图片去水印失败（该张不产出）: %v", perr)
+					lastErr = perr
+					continue
+				}
+			} else {
+				// 明确要水印：跳过像素级后处理，原样交付上游产物（含那层 Qwen 图层）。
+				// 不转存是有意的 —— 转存一份「带水印的副本」对调用方没有额外价值。
+				log.Printf("[qwen2api] 客户端要求保留水印（watermark=true），跳过去水印")
 			}
 
 			d := ImageDatum{URL: u, RevisedPrompt: revised}
@@ -816,17 +980,58 @@ func (s *Server) handleImageEdits(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	datums := make([]ImageDatum, 0, len(imgs))
+	// 🔴 与 generations 同一条水印纪律（2026-11-12 用户明令：图片也必须无水印）。
+	// 两个入口同一模态却两套交付策略，是「同一个问题两种答案」——
+	// 走 edits 拿到带水印图、走 generations 拿到干净图，调用方无从理解。
+	wantWatermark, wmSet := formBool(r, "watermark")
+	st := s.conf().Storage
+	if wmSet && !wantWatermark {
+		if ww := watermarkWarn(st.IsEnabled() && st.ImageStripWatermark); ww != "" {
+			setMediaWarnings(w, []string{ww})
+		}
+	}
+
+	var (
+		datums  []ImageDatum
+		lastErr error
+	)
 	for _, u := range imgs {
-		// 同 generations：原样返回上游直链。
+		var polished []byte
+		if !wantWatermark {
+			var perr error
+			u, polished, perr = s.polishImage(r.Context(), u)
+			if perr != nil {
+				// 失败不降级：宁可这张不产出，也不交带水印的图。
+				log.Printf("[qwen2api] edits 去水印失败（该张不产出）: %v", perr)
+				lastErr = perr
+				continue
+			}
+		}
 		d := ImageDatum{URL: u, RevisedPrompt: revised}
 		if format == "b64_json" {
-			if b64, derr := downloadAsBase64(r.Context(), u); derr == nil {
+			if polished != nil {
+				d.B64JSON = base64.StdEncoding.EncodeToString(polished)
+				d.URL = ""
+			} else if b64, derr := downloadAsBase64(r.Context(), u); derr == nil {
 				d.B64JSON = b64
 				d.URL = ""
 			}
 		}
 		datums = append(datums, d)
+	}
+	if len(datums) == 0 {
+		msg := "上游产物全部后处理失败"
+		if lastErr != nil {
+			msg = lastErr.Error()
+		}
+		entry.Status = http.StatusBadGateway
+		entry.Account = acct
+		entry.ChatID = chatID
+		entry.Error = msg
+		entry.DurationMS = time.Since(start).Milliseconds()
+		s.addReq(&entry)
+		writeError(w, http.StatusBadGateway, "upstream_error", msg)
+		return
 	}
 	writeJSON(w, http.StatusOK, ImageResponse{Created: time.Now().Unix(), Data: datums})
 
