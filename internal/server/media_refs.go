@@ -1,15 +1,83 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"image"
+	_ "image/gif"
+	_ "image/jpeg"
+	_ "image/png"
 	"io"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/yuanjie-ai/qwen2api/internal/upstream"
 )
+
+// badImageRef 参考图本身不可用 —— 客户端的输入问题，不是上游故障。
+//
+// 🔴 归到 KindBadInput 一把决定三件事：400（而不是 502）、不换号重试、
+// 不给账号记失败。早先这类错误是裸 error，一路落到 502 + 换号，
+// 于是一个坏 base64 会逐个号试过去，而客户端被告知「稍后重试」。
+func badImageRef(detail string) error {
+	return &upstream.Error{Kind: upstream.KindBadInput, Op: "参考图", Detail: detail}
+}
+
+// validateImageBytes 完整解码一次参考图，确认它不是「头部合法、数据残缺」的坏图。
+//
+// 🔴 只嗅魔数不够：截断的 PNG 前 8 字节完全合法，嗅探一路放行，坏图被上传成
+// blob 交给上游，上游才报 image_edit_input_unreadable。那时会话已经建好、
+// 号已经占了，而错误被包装成 502「稍后重试」—— 客户端只会拿同一张坏图重试。
+// 2026-11-19 探针实测：13 条坏图请求消耗了 13 个不同账号。
+//
+// 只对**本地有解码器**的格式做完整解码（png/jpeg/gif）。webp 没有标准库
+// 解码器，「解不出来就拒」会把合法 webp 一起误杀 —— 那种情况宁可放行。
+//
+// 🔴 判据是「**渲染不了**」，不是「Go 解不出来」：
+//   - 拦：不是图片（unknown format）、数据被截断（not enough pixel data / unexpected EOF）
+//   - 放：校验和有瑕疵但结构完整 —— macOS ImageIO 能正常渲染，只是 Go 更严格
+//     （实测：社区通用的 1x1 PNG 常量 sips 读出 1×1，Go 报 zlib invalid checksum）。
+// 拿"解不出来"当准入门会把这类真实可用的图一起拒掉，那是另一种说谎。
+func validateImageBytes(raw []byte, mime string) error {
+	switch mime {
+	case "image/png", "image/jpeg", "image/gif":
+	default:
+		return nil
+	}
+	if _, _, err := image.Decode(bytes.NewReader(raw)); err != nil && unrenderableImage(err) {
+		return badImageRef("图片无法渲染（不是图片或数据被截断）: " + err.Error())
+	}
+	return nil
+}
+
+// unrenderableImage 判断解码错误是「这张图根本画不出来」还是「只是不够干净」。
+//
+// 只认结构性缺失：非图片、像素数据不足、流被截断。
+// checksum / CRC 类错误不在此列 —— 它们不影响渲染，只影响严格性。
+func unrenderableImage(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, io.ErrUnexpectedEOF) {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	for _, bad := range []string{
+		"unknown format",
+		"not enough pixel data",
+		"unexpected eof",
+		"unsupported format",
+	} {
+		if strings.Contains(msg, bad) {
+			return true
+		}
+	}
+	return false
+}
 
 // resolveImageRef 把 `image` 字段的三种形态统一解成字节。
 //
@@ -21,7 +89,7 @@ import (
 func resolveImageRef(ctx context.Context, ref string) (data []byte, mime, filename string, err error) {
 	ref = strings.TrimSpace(ref)
 	if ref == "" {
-		return nil, "", "", errors.New("空的图片引用")
+		return nil, "", "", badImageRef("空的图片引用")
 	}
 
 	if strings.HasPrefix(ref, "data:") {
@@ -41,7 +109,10 @@ func resolveImageRef(ctx context.Context, ref string) (data []byte, mime, filena
 		}
 		raw, decErr := base64.StdEncoding.DecodeString(ref[comma+1:])
 		if decErr != nil {
-			return nil, "", "", fmt.Errorf("data URI 解码失败: %w", decErr)
+			return nil, "", "", badImageRef("data URI 的 base64 解码失败: " + decErr.Error())
+		}
+		if vErr := validateImageBytes(raw, mime); vErr != nil {
+			return nil, "", "", vErr
 		}
 		return raw, mime, "ref" + extForMime(mime), nil
 	}
@@ -51,7 +122,11 @@ func resolveImageRef(ctx context.Context, ref string) (data []byte, mime, filena
 		if dlErr != nil {
 			return nil, "", "", dlErr
 		}
-		return raw, sniffMime(raw), "ref" + extForMime(sniffMime(raw)), nil
+		m := sniffMime(raw)
+		if vErr := validateImageBytes(raw, m); vErr != nil {
+			return nil, "", "", vErr
+		}
+		return raw, m, "ref" + extForMime(m), nil
 	}
 
 	// 裸 base64
@@ -60,12 +135,15 @@ func resolveImageRef(ctx context.Context, ref string) (data []byte, mime, filena
 		// 也可能是 URL-safe 变体
 		raw, decErr = base64.RawURLEncoding.DecodeString(ref)
 		if decErr != nil {
-			return nil, "", "", errors.New("既不是 data URI / URL，也不是合法 base64")
+			return nil, "", "", badImageRef("既不是 data URI / URL，也不是合法 base64")
 		}
 	}
 	m := sniffMime(raw)
 	if m == "" {
-		return nil, "", "", errors.New("裸 base64 解出来后不是已知图片格式")
+		return nil, "", "", badImageRef("裸 base64 解出来后不是已知图片格式")
+	}
+	if vErr := validateImageBytes(raw, m); vErr != nil {
+		return nil, "", "", vErr
 	}
 	return raw, m, "ref" + extForMime(m), nil
 }

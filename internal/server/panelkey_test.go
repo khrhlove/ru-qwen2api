@@ -10,6 +10,9 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"image"
+	"image/png"
+	"math/rand"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -54,8 +57,10 @@ func TestImagesAcceptsMultiImageBody(t *testing.T) {
 	up := newFakeUpstream(t, 0)
 	h := newTestServer(t, up, 1, nil)
 
-	// data URI 分支不校验魔数（只解码），所以拿零字节当图足够测"能不能进门"。
-	one := base64.StdEncoding.EncodeToString(make([]byte, 1<<20))
+	// 🔴 夹具必须是**真能渲染**的图：data URI 现在会完整解码，零字节会被 400 挡在入口
+	// （那正是 2026-11-19 探针暴露的漏口的修复）。
+	// 用噪点图而不是纯色图：纯色 PNG 压缩后只有几 KB，撑不到 body 上限的场景。
+	one := base64.StdEncoding.EncodeToString(noisePNG(t, 700))
 	imgs := []string{
 		"data:image/png;base64," + one,
 		"data:image/png;base64," + one,
@@ -84,4 +89,19 @@ func TestImagesAcceptsMultiImageBody(t *testing.T) {
 	if len(files) != 3 {
 		t.Fatalf("应带 3 张参考图提交，实际 %d", len(files))
 	}
+}
+
+// noisePNG 生成一张不可压缩的 PNG（噪点），用来构造大体积请求体。
+func noisePNG(t *testing.T, size int) []byte {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, size, size))
+	rnd := rand.New(rand.NewSource(42))
+	for i := range img.Pix {
+		img.Pix[i] = byte(rnd.Intn(256))
+	}
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		t.Fatalf("生成夹具图失败: %v", err)
+	}
+	return buf.Bytes()
 }
