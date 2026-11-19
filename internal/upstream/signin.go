@@ -14,12 +14,12 @@ import (
 
 // SignIn 账号密码登录，返回**带形态前缀的凭据**（`bearer:<access_token>`）。
 //
-// 🔴 实测（2026-10-28）三条硬事实：
-//  1. 端点仍在**业务域** `chat.qwen.ai/api/v2/auths/signin`；
-//     换到 `auth.qwen.ai` 会得到 `Bad_Request: Missing origin`。
+// 🔴 2026-11-18 上游改版后的事实（旧结论已作废，见 docs/UPSTREAM.md §2.1）：
+//  1. 登录端点必须打 **auth 域** `auth.qwen.ai/api/v2/auths/signin`；
+//     chat 域的 signin 只剩会话 cookie，换不出 access_token（恒 401 未授权）。
 //  2. 密码字段是 **sha256hex(明文)**，不是明文。
-//  3. 签发的 token **只在 `Set-Cookie`** 里（body 是账号资料，没有 token），
-//     且它是 **cookie 形态** —— 当 Bearer 发会 401。这就是本仓要区分形态的原因。
+//  3. 响应体 `data.access_token` 才是可写的 Bearer；`data.token` 是那张会话
+//     cookie 的 JWT（当 Bearer 发 401）；续期用的 refresh_token 在 Set-Cookie 里。
 //
 // ⚠️ signin 有 IP 级频率墙（同出口连登多号会吃 aliyun_waf 挑战页），
 // 所以只在"凭据失效且配了密码"时才调用，不要拿它当轮询。
@@ -30,8 +30,8 @@ func (c *Client) SignIn(ctx context.Context, email, password string) (string, er
 
 // SignInSession 登录并返回**两份**凭据：
 //
-//	access  = bearer:<jwt>  业务请求用，实测 TTL 只有 900 秒
-//	session = cookie:<jwt>  signin 签发的会话，用于 /auths/refresh 换新 access
+//	access  = bearer:<jwt>   业务请求用，实测 TTL 约 900 秒
+//	session = refresh_token  30 天、可重复使用（auth 域的 signin 直接下发）
 //
 // 🔴 为什么要留 session：access 会过期，而 refresh 只需要这张 refresh_token。
 // 以前把它丢掉，等于每次过期都要用密码**从头登录**一次 —— 对 3000 个账号
