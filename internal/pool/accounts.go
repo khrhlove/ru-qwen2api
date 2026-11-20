@@ -45,13 +45,14 @@ func (p *Pool) Add(a config.Account) (*Account, bool) {
 	}
 	acc := &Account{
 		Name:         name,
-		Token:        a.Token,
+		Token:        dropSessionTicket(name, a.Token),
 		Email:        strings.TrimSpace(a.Email),
 		Password:     a.Password,
 		RefreshToken: a.RefreshToken,
 		Note:         a.Note,
 	}
-	if exp, ok := expireOf(a.Token); ok {
+	// 读 acc.Token：会话 JWT 已被 dropSessionTicket 丢掉时不能再把它的 exp 捡回来。
+	if exp, ok := expireOf(acc.Token); ok {
 		acc.tokenExp = exp
 	}
 	if exp, ok := expireOf(a.RefreshToken); ok {

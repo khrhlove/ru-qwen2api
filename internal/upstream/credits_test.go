@@ -147,3 +147,33 @@ func TestDeriveDailyAt(t *testing.T) {
 		t.Fatalf("没有 daily 应为 0，得到 %d", got)
 	}
 }
+
+// 真实形态（2026-11-20 实测）：传输层是 HTTP 200，401 藏在信封的 httpCode 里。
+// 只按传输层归类的后果不是文案问题 —— NOT_LOGIN 被归成 KindUnknown，
+// 上层"换票后重读一次"的判断永远不触发，余额路径只报日志、从不自愈。
+func TestCreditsNotLoginIsAuth(t *testing.T) {
+	body := `{"traceId":"x","httpCode":401,"success":false,` +
+		`"errorCode":"NOT_LOGIN","errorMsg":"User not logged in"}`
+	cli, _ := newCreditsClient(t, body, http.StatusOK)
+
+	_, err := cli.Credits(context.Background(), "tok")
+	if KindOf(err) != KindAuth {
+		t.Fatalf("NOT_LOGIN 应归类为 auth，实际 %v（%v）", KindOf(err), err)
+	}
+	// Status 要如实保留传输层的 200：它证明了"上游不是用状态码表达拒绝"，
+	// 排障时不能把这个事实抹掉。
+	if got := StatusOf(err); got != http.StatusOK {
+		t.Fatalf("传输层状态应保留 200，实际 %d", got)
+	}
+}
+
+// 上游也可能两个状态码都给 200，只在业务码里给 NOT_LOGIN。
+// 业务码是比状态码更早出现的信号，不能等它"升级"成 401 才认。
+func TestCreditsNotLoginWithoutHTTPCode(t *testing.T) {
+	body := `{"httpCode":200,"success":false,"errorCode":"NOT_LOGIN","errorMsg":"User not logged in"}`
+	cli, _ := newCreditsClient(t, body, http.StatusOK)
+
+	if _, err := cli.Credits(context.Background(), "tok"); KindOf(err) != KindAuth {
+		t.Fatalf("业务码 NOT_LOGIN 也应归 auth，实际 %v（%v）", KindOf(err), err)
+	}
+}

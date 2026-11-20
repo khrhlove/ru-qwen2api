@@ -9,6 +9,7 @@ package pool
 
 import (
 	"encoding/json"
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -18,6 +19,7 @@ import (
 	"time"
 
 	"github.com/yuanjie-ai/qwen2api/internal/config"
+	"github.com/yuanjie-ai/qwen2api/internal/upstream"
 )
 
 // Account 单个账号的运行时状态。
@@ -157,6 +159,22 @@ func (p *Pool) conf() config.Pool {
 	return v
 }
 
+// dropSessionTicket 丢掉"会话 JWT"形态的凭据，返回应存入池的 token。
+//
+// 会话票的 exp 是"天"级，本地所有"还能用多久"的判断都会被它骗过去；
+// 而它在上游**所有域**都是 401（2026-11-20 实测：chat 401、积分域 NOT_LOGIN）。
+// 收下它等于制造一个永远轮不到修的僵尸号 —— 选号优先它、轮询反复刷它、
+// 保活又因为它"离过期还远"从不碰它。宁可在入口丢弃并留一条日志：
+// 面板会显示"凭据缺失"，人一眼知道该用邮箱+密码重登。
+func dropSessionTicket(name, token string) string {
+	if !upstream.LooksLikeSessionTicket(token) {
+		return token
+	}
+	log.Printf("[qwen2api] 账号 %s 的凭据是会话 JWT（exp 超过 1 小时），不是 access token："+
+		"已忽略，请用邮箱+密码重登", name)
+	return ""
+}
+
 // New 构造池并尝试恢复上次的冷却状态。
 func New(cfg config.Pool, accounts []config.Account, stateFile string) *Pool {
 	p := &Pool{state: stateFile}
@@ -164,7 +182,7 @@ func New(cfg config.Pool, accounts []config.Account, stateFile string) *Pool {
 	for _, a := range accounts {
 		acc := &Account{
 			Name:         a.Name,
-			Token:        a.Token,
+			Token:        dropSessionTicket(a.Name, a.Token),
 			Email:        a.Email,
 			Password:     a.Password,
 			RefreshToken: a.RefreshToken,
@@ -172,7 +190,9 @@ func New(cfg config.Pool, accounts []config.Account, stateFile string) *Pool {
 		}
 		// 启动时就从 JWT 解出过期时刻：之后预热/调度都靠它判断，
 		// 不需要"先跑一次请求才知道这张票还能不能用"。
-		if exp, ok := expireOf(a.Token); ok {
+		// 注意读 acc.Token 而不是 a.Token：会话 JWT 已被丢掉时就该是"未知"，
+		// 否则又会把它的 30 天寿命捡回来。
+		if exp, ok := expireOf(acc.Token); ok {
 			acc.tokenExp = exp
 		}
 		// 重启时从文件恢复 refresh_token 的到期时间，保养任务才不会"重新计时"。
@@ -496,6 +516,10 @@ func (p *Pool) SetCreditBalance(name string, balance int) {
 	}
 	if balance < 0 {
 		a.creditKnown = false
+		// 🔴 读失败也要记时间（2026-11-20 修）：不记的话 CreditStale 永远返回它，
+		// 面板 5s 轮询就是每 5 秒重打一次注定失败的上游，而 noteCreditErr 的
+		// 5 分钟去重把这频次完全掩盖了。记上之后退避到 TTL，与"余额过期"同口径。
+		a.creditAt = time.Now()
 		return
 	}
 	a.creditBalance = balance
@@ -595,6 +619,10 @@ func (p *Pool) lookupLocked(name string) *Account {
 }
 
 // CreditStale 列出余额过期（或从没读过）的账号名，供上层批量刷新。
+//
+// 读失败也会被 SetCreditBalance(-1) 记上时间，因此这里只看 creditAt：
+// "已知但旧"和"刚试过且失败"都该等到 TTL 之后，否则坏号会被每一轮轮询重复打。
+// force 刷新（ttl=0）不受影响：任何已记过时间的号都会被重新选中。
 func (p *Pool) CreditStale(ttl time.Duration) []string {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -604,7 +632,7 @@ func (p *Pool) CreditStale(ttl time.Duration) []string {
 		if a.authDead {
 			continue
 		}
-		if !a.creditKnown || now.Sub(a.creditAt) > ttl {
+		if a.creditAt.IsZero() || now.Sub(a.creditAt) > ttl {
 			out = append(out, a.Name)
 		}
 	}
@@ -800,6 +828,24 @@ func (p *Pool) MarkNeedLogin(name string) {
 	defer p.mu.Unlock()
 	if a := p.lookupLocked(name); a != nil {
 		a.needLogin = true
+	}
+}
+
+// MarkTokenStale 作废"本地还新鲜"的判断，但保留票本身。
+//
+// 场景（2026-11-20 实测）：余额接口用 HTTP 200 + NOT_LOGIN 明确告诉我们
+// "这张票上游不认"，而它的 exp 可能还剩几天（会话 JWT 就是 28 天）。
+// 规则是同一个：**能当 Bearer 的只有上游认可的那张票，本地 exp 不是权威**。
+//
+// 为什么只清 tokenExp、不直接换票：调用点可能在后台轮询里，一轮 32 个号
+// 各做一次 signin = 主动制造风控流量。清掉符号等于把这件事交回 keepalive：
+// 票不再"新鲜" ⇒ 选号降权（不会再被优先挑中）、余额轮询跳过它（不再刷噪音）、
+// 续期/重登候选（refreshTokenOnly / AdoptCandidates）开始认领它。
+func (p *Pool) MarkTokenStale(name string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if a := p.lookupLocked(name); a != nil {
+		a.tokenExp = time.Time{}
 	}
 }
 

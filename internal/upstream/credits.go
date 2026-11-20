@@ -144,10 +144,19 @@ func (c *Client) creditHistory(ctx context.Context, cred string, pageSize int) (
 			"响应不是 JSON: "+truncate(string(raw), 200), false)
 	}
 	if resp.StatusCode >= 400 || env.HTTPCode >= 400 {
-		// 走统一的 HTTP 归类（401→auth、429→rate_limit…），别自造一份。
-		return nil, classifyHTTP(resp.StatusCode, resp.StatusCode, "credits", raw)
+		status := env.HTTPCode
+		if status < 400 {
+			status = resp.StatusCode
+		}
+		return nil, creditsErr(resp.StatusCode, status, env.ErrorCode, raw)
 	}
 	if env.Success != nil && !*env.Success {
+		// NOT_LOGIN 是凭据信号，走统一归类（→ KindAuth）；其余业务失败保持
+		// 原来的文案：调用方需要的是"积分接口返回失败 + 上游原话"，
+		// 而不是一段没人读的 JSON。
+		if isNotLogin(env.ErrorCode) {
+			return nil, creditsErr(resp.StatusCode, resp.StatusCode, env.ErrorCode, raw)
+		}
 		return nil, NewErr(KindUnknown, "credits", resp.StatusCode, env.ErrorCode,
 			"积分接口返回失败: "+env.ErrorMsg, false)
 	}
@@ -157,6 +166,36 @@ func (c *Client) creditHistory(ctx context.Context, cred string, pageSize int) (
 	}
 	env.Data.LastDailyAt = deriveDailyAt(env.Data.UsageList)
 	return env.Data, nil
+}
+
+// creditsErr 把积分域的信封翻译成统一错误。
+//
+// 🔴 两个状态码都要看（2026-11-20 修）：这个域把真正的 401 放在信封的
+// `httpCode` 里，传输层仍是 **HTTP 200**。只按传输层归类会把
+// `{"httpCode":401,"errorCode":"NOT_LOGIN"}` 归成 KindUnknown ——
+// 上层"换票后重读一次"的判断就永远不触发，余额路径因此只报日志、从不自愈。
+func creditsErr(actual, envelope int, code string, raw []byte) error {
+	err := classifyHTTP(actual, envelope, "credits", raw)
+	if ue, ok := err.(*Error); ok && isNotLogin(code) {
+		// 业务码是比状态码更早出现的信号：上游曾在两个状态码都给 200 时只给
+		// NOT_LOGIN。归到 KindAuth 才能让调用方去换票，而不是当成"响应形态变了"。
+		ue.Kind = KindAuth
+		ue.Code = code
+		ue.RetrySafe = true
+	}
+	return err
+}
+
+// isNotLogin 积分域用 `errorCode: NOT_LOGIN` 表达"这张票不被接受"。
+//
+// 等价于 401：票本身有问题（会话 JWT 当 Bearer、被撤销、账号退出登录），
+// 重试同一张票命中率是 0，只能换票。
+func isNotLogin(code string) bool {
+	switch strings.ToLower(strings.TrimSpace(code)) {
+	case "not_login", "unauthorized", "token_expired", "invalid_token":
+		return true
+	}
+	return false
 }
 
 // deriveDailyAt 从流水里推最近一次「每日赠送」入账时刻（Unix 秒，0=没有）。

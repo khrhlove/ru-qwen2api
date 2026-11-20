@@ -80,6 +80,13 @@ func (s *Server) refreshStaleCredits(ctx context.Context, ttl time.Duration) {
 			defer wg.Done()
 			c, err := s.up.Credits(upstream.WithAccount(ctx, name), s.pool.Credential(name))
 			if err != nil {
+				// 上游明确拒绝这张票（NOT_LOGIN / 401）⇒ 本地"新鲜"的判断作废，
+				// 交给 keepalive 认领。这里**不换票**：一轮 32 个号各做一次
+				// signin 等于主动制造风控流量（2026-11-18 实测），而余额只是
+				// 辅助信息，不值得为它冒险。
+				if upstream.KindOf(err) == upstream.KindAuth {
+					s.pool.MarkTokenStale(name)
+				}
 				s.noteCreditErr(name, err)
 				s.pool.SetCreditBalance(name, -1) // 标未知，不拦
 				return
@@ -158,14 +165,37 @@ func (s *Server) refreshOneCredit(ctx context.Context, name string) bool {
 	defer cancel()
 	actx := upstream.WithAccount(ctx, name)
 	cred := s.pool.Credential(name)
+	renewed := false
 	// 与后台轮询不同：这里不能跳过过期凭据 —— 这个号**紧接着就要被用来提交**，
 	// 余额读不到就只能"不拦"，而窗口里本来可以顺手续期把余额读准。
 	if a := s.pool.Get(name); a != nil {
-		cred = s.ensureFresh(actx, a, cred)
+		next := s.ensureFresh(actx, a, cred)
+		renewed = next != cred
+		cred = next
 	}
 	c, err := s.up.Credits(actx, cred)
+	if err != nil && upstream.KindOf(err) == upstream.KindAuth && !renewed {
+		// 🔴 重试同一张票没有意义（2026-11-20 实测：票被拒时 chat 域和积分域
+		// 都是 401，直连与号池出口结果一字不差）。有意义的是"换票后再读一次" ——
+		// 与 chat 路径的 renewableErr + renewTried 同构，且只做一次：
+		//   · 这是视频提交路径，每多一次 signin 就多几秒首字；
+		//   · 若刚才 ensureFresh 已经换过票还被拒，说明问题不在票本身。
+		// 必须先 MarkTokenStale：relogin 开头有"还新鲜就别换"的短路，
+		// 而此刻的病恰恰是"本地新鲜、上游不认"。
+		s.pool.MarkTokenStale(name)
+		if a := s.pool.Get(name); a != nil && s.relogin(actx, a) {
+			cred = s.pool.Credential(name)
+			c, err = s.up.Credits(actx, cred)
+		}
+	}
 	if err != nil {
 		s.noteCreditErr(name, err)
+		// 票被拒 ⇒ 作废本地新鲜度，交给 keepalive 认领。
+		// 不打 auth_dead：那会让它在所有候选列表里消失（只能面板复活），
+		// 而这里很可能只是票型不对，一次重登就能修。
+		if upstream.KindOf(err) == upstream.KindAuth {
+			s.pool.MarkTokenStale(name)
+		}
 		s.pool.SetCreditBalance(name, -1)
 		return false
 	}

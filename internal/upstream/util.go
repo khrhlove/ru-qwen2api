@@ -104,6 +104,32 @@ func TokenExpiry(cred string) (time.Time, bool) {
 	return time.Unix(c.Exp, 0), true
 }
 
+// LooksLikeSessionTicket 凭据是不是"会话 JWT"而不是 access token。
+//
+// 判据只有寿命：网页端会话票 30 天，access token 900 秒，中间没有歧义；
+// 不依赖 iat/aud/type —— 上游字段随改版会变（2026-11-18 刚改过一次），寿命不会。
+//
+// 🔴 为什么必须在入口就拦（2026-11-20 实测）：这类票当 Bearer 发，
+// chat 域 401、积分域 HTTP 200 + `NOT_LOGIN`；而本地所有新鲜度判断只读 exp，
+// 会把它当成"还能用 30 天"。结果是：选号优先它、余额轮询反复刷它、
+// 保活又因为它"离过期还远"从不碰它 —— 一个永远不会被修的僵尸号。
+// 实测样本：3135 个号里只有 1 个是这种形态，但它把余额轮询噪音刷了 45 分钟。
+func LooksLikeSessionTicket(cred string) bool {
+	if strings.TrimSpace(cred) == "" {
+		return false
+	}
+	// 只判 Bearer：cookie jar 本来就是长寿命会话，按寿命判会误伤（它的鉴权
+	// 方式也不同——发的是 Cookie 头，不是 Authorization）。
+	if mode, _ := SplitCredential(cred); mode == ModeCookie {
+		return false
+	}
+	exp, ok := TokenExpiry(cred)
+	if !ok {
+		return false
+	}
+	return time.Until(exp) > time.Hour
+}
+
 // IsCookieJar 判断凭据是否为完整 cookie jar：
 // 含 ";" 或以 "token=" 开头。
 func IsCookieJar(cred string) bool {
