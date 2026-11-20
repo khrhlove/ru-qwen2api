@@ -478,7 +478,8 @@ type Config struct {
 //
 // 不配密码 = 保持老行为（只认 API Key）；配了就必须先登录才能进面板。
 type Panel struct {
-	// Key 面板登录密钥（自定义，任意字符串；推荐 `sk-panel-` 前缀）。
+	// Key 面板登录密钥（自定义，任意字符串）。
+	// 命名约定：`sk-` + 服务二级域名，直接拼、不加前后缀（`qwen2api.1task.cn` → `sk-qwen2api`）。
 	//
 	// 面板默认就是密钥登录：登录框输入它 → 换一个 HttpOnly 会话 cookie（浏览器里
 	// 不再留明文），也可以 Bearer / x-api-key / ?key= 直接带它调 /panel/api/*。
@@ -488,6 +489,7 @@ type Panel struct {
 	//
 	// 🔴 这把 Key 只在面板生效，**不会**被 /v1 接受 —— 权限边界保持清晰：
 	// 面板能导入/删除账号、能看到全部邮箱，不该和"给 SDK 用的推理令牌"共用一把。
+	// 按上面的命名约定两者同值时（一把钥匙两处通用），前提是面板不暴露公网。
 	Key string `json:"key,omitempty"`
 	// Username 面板用户名，默认 admin（仅账密登录用）。
 	Username string `json:"username"`

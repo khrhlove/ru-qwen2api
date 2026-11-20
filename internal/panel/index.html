@@ -659,7 +659,7 @@ wang@example.com|密码3|备用号"></textarea>
       <div id="authKey">
         <div class="field">
           <label>面板密钥</label>
-          <input id="keyInput" type="password" placeholder="sk-panel-…（config.panel.key）" autocomplete="off">
+          <input id="keyInput" type="password" placeholder="sk-…（config.panel.key）" autocomplete="off">
         </div>
         <div class="hint" style="margin-top:6px">也可以直接填前门 API Key。登录后换成 HttpOnly 会话，明文不会留在浏览器里。</div>
       </div>
@@ -1557,7 +1557,7 @@ function renderKeys() {
 
   const model = (S.ov && S.ov.config && S.ov.config.default_model) || 'qwen3.7-plus';
   const curl = [
-    'export QWEN2API_KEY=sk-qwen-…        # 换成上面任意一把',
+    'export QWEN2API_KEY=sk-…             # 换成上面任意一把',
     'curl -s ' + base + '/v1/chat/completions \\',
     '  -H "Authorization: Bearer $QWEN2API_KEY" -H "Content-Type: application/json" \\',
     '  -d \'{"model":"' + model + '","messages":[{"role":"user","content":"你好"}]}\'',

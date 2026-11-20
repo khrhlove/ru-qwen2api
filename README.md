@@ -64,7 +64,7 @@ go run ./cmd/server -config config.json
 # 3. 验证
 curl -s localhost:8400/readyz
 curl -s localhost:8400/v1/chat/completions \
-  -H 'Authorization: Bearer sk-qwen-change-me' \
+  -H 'Authorization: Bearer sk-qwen2api' \
   -H 'Content-Type: application/json' \
   -d '{"model":"qwen3.7-plus","messages":[{"role":"user","content":"你好"}],"stream":true}'
 ```
@@ -579,11 +579,14 @@ Claude Code / Cline 这类客户端把 Base URL 指向本服务即可。按 Anth
 
 ```json
 "panel": {
-  "key": "sk-panel-change-me",
+  "key": "sk-qwen2api",
   "session_hours": 720,
   "session_secret": "多副本部署时必须配同一个"
 }
 ```
+
+命名约定：面板密钥与前门令牌都取 **`sk-` + 二级域名**、直接拼不加前后缀
+（`qwen2api.1task.cn` → `sk-qwen2api`）。
 
 打开 `/panel/` 直接看到「输入密钥进入」：
 
@@ -596,6 +599,8 @@ Claude Code / Cline 这类客户端把 Base URL 指向本服务即可。按 Anth
 - `?key=…` 深链会先拿它换会话，再把参数从地址栏抹掉；
 - 脚本 / CI 仍可直接带 `Authorization: Bearer <key>`、`x-api-key` 或 `?key=` 调 `/panel/api/*`；
 - 🔴 **面板密钥只在面板生效，`/v1` 不认它** —— 面板能删账号，权限边界必须清晰；
+  若把**同一个值**同时写进 `api_keys`，等于一把钥匙两处通用：推理令牌一旦外发，面板也就开了。
+  面板不在公网暴露（只走隧道 / 入口层 404）时才建议这么做；
 - 连续 10 次失败 → 同 IP 锁 10 分钟（面板在公网，没这道闸等于开放爆破）。
 
 还想用账密？配上 `password_hash`（`qwen2api -passwd '你的密码'`，省得手算迭代次数）或
