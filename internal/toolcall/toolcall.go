@@ -36,8 +36,14 @@ const (
 	// 只作 sanity 上限：真正的成本约束是字节数。
 	DefaultMaxTools = 256
 	// DefaultMaxSchemaBytes 全部工具定义（name+description+parameters）的默认字节上限。
-	// 128KB ≈ 30k tokens；再大就不是"模拟工具"而是拿上下文当垃圾桶了。
-	DefaultMaxSchemaBytes = 128 << 10
+	//
+	// 🔴 32KB 是实测出来的，不是拍的（2026-11-20 线上）：
+	//   - 94KB / 28 个工具 × 40 参数：首字节 7.3s、总耗时 45.8s，**tool_calls 帧 0**
+	//     —— 目录太大模型干脆不调工具，只剩延迟；
+	//   - 89KB（WorkBuddy「完全访问」）：14k prompt，首字节 17~22s。
+	// 也就是说超过这个量级，"模拟工具"既不快也不准，不如跳过、交给原生通道。
+	// 正常 agent 客户端（Claude Code / Cline）的工具集在 10~20KB，不受影响。
+	DefaultMaxSchemaBytes = 32 << 10
 	// MaxCalls 单轮回复里最多接受多少个调用。
 	MaxCalls = 16
 )

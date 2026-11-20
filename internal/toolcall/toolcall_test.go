@@ -212,13 +212,14 @@ func TestFit(t *testing.T) {
 	if len(got) != 0 || !strings.Contains(note, "工具定义过大") {
 		t.Fatalf("字节超限应降级: %d %q", len(got), note)
 	}
-	// 线上真实量级：89154 字节在默认预算（128KB）内必须能过
-	if Size(big) > DefaultMaxSchemaBytes {
-		t.Skip("构造的样例比默认预算还大，跳过默认预算断言")
+	// 默认预算的边界（2026-11-20 线上实测定的 32KB）：
+	//   · 20KB 工具集 ⇒ 正常模拟（Claude Code / Cline 量级）
+	//   · 89KB（WorkBuddy「完全访问」）⇒ 跳过（94KB 实测 45.8s 且 0 次调用）
+	if got, note := (Limits{}).Fit([]Tool{{Name: "cc", Description: strings.Repeat("z", 20<<10)}}); len(got) != 1 || note != "" {
+		t.Fatalf("20KB 工具集应正常模拟: %q", note)
 	}
-	huge := []Tool{{Name: "wb", Description: strings.Repeat("y", 89154)}}
-	if got, note := (Limits{}).Fit(huge); len(got) != 1 || note != "" {
-		t.Fatalf("89KB 的工具集应在默认预算内通过（WorkBuddy 实测值）: %q", note)
+	if got, note := (Limits{}).Fit([]Tool{{Name: "wb", Description: strings.Repeat("y", 89<<10)}}); len(got) != 0 || !strings.Contains(note, "跳过") {
+		t.Fatalf("89KB 工具集应跳过模拟（大目录既不快也不准）: %q", note)
 	}
 }
 

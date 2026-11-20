@@ -44,11 +44,11 @@
   "expose_reasoning": true,
   "// new_chat_per_request": "每请求新建会话（无状态，默认 true）；false = 复用会话（省一次上游调用）",
   "new_chat_per_request": true,
-  "// tool_calls": "客户端函数调用（OpenAI tools / Anthropic tools / Responses tools）。上游没有函数调用通道，网关用「prompt 协议 + 输出解析」模拟：把 tools 渲染成系统指令，模型需要工具时只输出一个 JSON，网关解析成 tool_calls。enabled=true（默认）时生效；模型不遵守协议时退回纯文本（绝不伪造调用），并在 X-Qwen2API-Warnings 说明。enabled=false 时按普通对话回答（tools 被忽略，同样会告警）。max_tools / max_schema_bytes 是容量预算：超限**只降级**（本轮跳过模拟、模型原样跑），不会 400 —— WorkBuddy「完全访问」实测 89KB 工具集，早期写死 64KB 会把请求打死。",
+  "// tool_calls": "客户端函数调用（OpenAI tools / Anthropic tools / Responses tools）。上游没有函数调用通道，网关用「prompt 协议 + 输出解析」模拟：把 tools 渲染成系统指令，模型需要工具时只输出一个 JSON，网关解析成 tool_calls。enabled=true（默认）时生效；模型不遵守协议时退回纯文本（绝不伪造调用），并在 X-Qwen2API-Warnings 说明。enabled=false 时按普通对话回答（tools 被忽略，同样会告警）。max_tools / max_schema_bytes 是容量预算：超限**只降级**（本轮跳过模拟、模型原样跑），不会 400 —— WorkBuddy「完全访问」实测 89KB 工具集（早期写死 64KB 会把请求打死）；32KB 是实测阈值：94KB/28 个工具时首字节 7.3s、总耗时 45.8s 且模型 0 次调用工具，模拟已无意义。",
   "tool_calls": {
     "enabled": true,
     "max_tools": 256,
-    "max_schema_bytes": 131072
+    "max_schema_bytes": 32768
   },
   "state_file": "./data/state.json",
   "upstream": {

@@ -525,10 +525,40 @@ func TestChatToolsStreamFenced(t *testing.T) {
 	}
 }
 
-// TestChatToolsWorkBuddySized WorkBuddy「完全访问」实测 89,154 字节：必须正常模拟。
-func TestChatToolsWorkBuddySized(t *testing.T) {
+// TestChatToolsMidSizeEmulates 20KB（Claude Code / Cline 量级）：正常模拟。
+func TestChatToolsMidSizeEmulates(t *testing.T) {
 	up := newFakeUpstream(t, 0)
 	up.frames = answerFrames(`{"tool_calls":[{"name":"get_weather","arguments":{"city":"北京"}}]}`)
+	h := newTestServer(t, up, 1, nil)
+
+	desc := strings.Repeat("x", 20*1024)
+	body := `{"model":"qwen3.8-max-agent","messages":[{"role":"user","content":"今天天气如何"}],
+		"tools":[{"type":"function","function":{"name":"get_weather","description":"` + desc + `","parameters":{"type":"object"}}}]}`
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body)))
+
+	if rec.Code != 200 {
+		t.Fatalf("状态码 %d: %s", rec.Code, rec.Body.String())
+	}
+	submitted, _ := json.Marshal(up.gotSubmit)
+	if !strings.Contains(string(submitted), "工具调用协议") {
+		t.Fatal("20KB 应在默认预算内，协议块必须注入")
+	}
+	warn, _ := url.QueryUnescape(rec.Header().Get("X-Qwen2API-Warnings"))
+	if strings.Contains(warn, "跳过") {
+		t.Fatalf("20KB 不该跳过: %q", warn)
+	}
+	if strings.Contains(string(submitted), "agent_mode") {
+		t.Fatal("agent + tools 应降级到底座普通模型")
+	}
+}
+
+// TestChatToolsWorkBuddySized WorkBuddy「完全访问」89,154 字节：默认预算 32KB ⇒ 跳过模拟。
+//
+// 依据：线上实测 94KB / 28 个工具 → 首字节 7.3s、总耗时 45.8s、tool_calls 帧 0。
+// 这个量级下"模拟工具"既不快也不准，跳过（保持 agent 原样）才是对的。
+func TestChatToolsWorkBuddySized(t *testing.T) {
+	up := newFakeUpstream(t, 0)
 	h := newTestServer(t, up, 1, nil)
 
 	bigDesc := strings.Repeat("x", 89*1024)
@@ -539,19 +569,18 @@ func TestChatToolsWorkBuddySized(t *testing.T) {
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body)))
 
 	if rec.Code != 200 {
-		t.Fatalf("89KB 工具集应被接受，得到 %d: %s", rec.Code, rec.Body.String())
+		t.Fatalf("89KB 工具集不该 400，得到 %d: %s", rec.Code, rec.Body.String())
 	}
 	submitted, _ := json.Marshal(up.gotSubmit)
-	if !strings.Contains(string(submitted), "工具调用协议") {
-		t.Fatal("默认预算内应注入协议块")
+	if strings.Contains(string(submitted), "工具调用协议") {
+		t.Fatal("超过默认预算不该注入协议块")
+	}
+	if !strings.Contains(string(submitted), "agent_mode") {
+		t.Fatalf("跳过工具时应保持 agent 模式: %s", submitted)
 	}
 	warn, _ := url.QueryUnescape(rec.Header().Get("X-Qwen2API-Warnings"))
-	if strings.Contains(warn, "跳过") {
-		t.Fatalf("默认预算内不该跳过: %q", warn)
-	}
-	// agent + tools 仍然降级（这条与容量无关）
-	if strings.Contains(string(submitted), "agent_mode") {
-		t.Fatal("agent + tools 应降级到底座普通模型")
+	if !strings.Contains(warn, "跳过工具调用模拟") {
+		t.Fatalf("应说明跳过原因: %q", warn)
 	}
 }
 
