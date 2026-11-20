@@ -232,16 +232,28 @@ func TestLogoutInvalidatesCookie(t *testing.T) {
 	}
 }
 
-func TestApiKeyStillWorksWhenPanelAuthOn(t *testing.T) {
-	// 脚本/CI 不该被面板登录挡住：Key 仍然是等效凭据。
-	p, _ := withPanel(func(c *config.Config) { c.APIKeys = []string{"sk-x"} })
+// 脚本/CI 不该被面板登录挡住 —— 但凭据只能是 panel.key，不是发出去的前门令牌。
+func TestScriptUsesPanelKeyWhenPasswordSet(t *testing.T) {
+	p, _ := withPanel(func(c *config.Config) {
+		c.Panel = config.Panel{Key: "sk-panel-cli", Password: "pw-test", SessionHours: 1}
+		c.APIKeys = []string{"sk-x"}
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/panel/api/overview", nil)
-	req.Header.Set("Authorization", "Bearer sk-x")
+	req.Header.Set("Authorization", "Bearer sk-panel-cli")
 	rec := httptest.NewRecorder()
 	p.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("有效 Key 应 200，得到 %d", rec.Code)
+		t.Fatalf("panel.key 应 200，得到 %d", rec.Code)
+	}
+
+	// 前门令牌（api_keys）配了密码后不再进面板：它是外发的推理凭据，按约定还可猜。
+	req = httptest.NewRequest(http.MethodGet, "/panel/api/overview", nil)
+	req.Header.Set("Authorization", "Bearer sk-x")
+	rec = httptest.NewRecorder()
+	p.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("配了密码时前门令牌应 401，得到 %d", rec.Code)
 	}
 
 	// 错误 Key 仍然 401（别把"有 Key 头"当成通过）

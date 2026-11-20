@@ -64,7 +64,7 @@ go run ./cmd/server -config config.json
 # 3. 验证
 curl -s localhost:8400/readyz
 curl -s localhost:8400/v1/chat/completions \
-  -H 'Authorization: Bearer sk-qwen2api' \
+  -H 'Authorization: Bearer sk-example' \
   -H 'Content-Type: application/json' \
   -d '{"model":"qwen3.7-plus","messages":[{"role":"user","content":"你好"}],"stream":true}'
 ```
@@ -579,25 +579,28 @@ Claude Code / Cline 这类客户端把 Base URL 指向本服务即可。按 Anth
 
 ```json
 "panel": {
-  "key": "sk-qwen2api",
+  "key": "sk-example",
   "session_hours": 720,
   "session_secret": "多副本部署时必须配同一个"
 }
 ```
 
 命名约定：面板密钥与前门令牌都取 **`sk-` + 二级域名**、直接拼不加前后缀
-（`qwen2api.1task.cn` → `sk-qwen2api`）。
+（如 `foo.1task.cn` → `sk-foo`）。
 
 打开 `/panel/` 直接看到「输入密钥进入」：
 
 - 填 `panel.key`（也可用环境变量 `QWEN2API_PANEL_KEY`）；**没配则认 `api_keys` 里任意一把**，
   单 Key 部署升级后不用改配置；
+- 🔴 **配了 `password` / `password_hash` 就只认账密**：前门令牌不再能进面板 ——
+  推理令牌按约定是可猜的，不该同时握有「删账号 / 看全部邮箱 / 撤 Key」的权限；
 - 提交后服务端换一个 **HttpOnly + SameSite=Lax 的签名 cookie**（HMAC-SHA256），
   明文密钥**不落 localStorage**（旧版会存，等于把长期凭据交给 XSS）；
 - 会话默认 **30 天**（`panel.session_hours` 可调）；签名密钥留空时**由凭据派生**，
   所以**重启/发版不掉线**（配了 `session_secret` 则以它为准，用于轮换）；
 - `?key=…` 深链会先拿它换会话，再把参数从地址栏抹掉；
-- 脚本 / CI 仍可直接带 `Authorization: Bearer <key>`、`x-api-key` 或 `?key=` 调 `/panel/api/*`；
+- 脚本 / CI 仍可直接带 `Authorization: Bearer <key>`、`x-api-key` 或 `?key=` 调 `/panel/api/*`
+  （配了账密时只认 `panel.key`，不认前门令牌）；
 - 🔴 **面板密钥只在面板生效，`/v1` 不认它** —— 面板能删账号，权限边界必须清晰；
   若把**同一个值**同时写进 `api_keys`，等于一把钥匙两处通用：推理令牌一旦外发，面板也就开了。
   面板不在公网暴露（只走隧道 / 入口层 404）时才建议这么做；

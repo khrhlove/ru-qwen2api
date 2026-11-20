@@ -147,15 +147,24 @@ func (p *Panel) apiKeyOK(r *http.Request, keys []string) bool {
 	return matchKey(token, keys)
 }
 
-// keyStrings 面板认的密钥：自定义面板密钥优先，其次前门令牌。
+// keyStrings 面板认的密钥：自定义面板密钥优先；前门令牌只作「没配账密」时的回落。
 //
 // 为什么要"回落前门令牌"：单 Key 部署（只配 config.api_keys）的用户升级后
 // 不该先改配置才能进面板。两把都认，撤销 api_key 时面板也一起失效。
 // 反过来不成立：面板密钥只在面板生效，/v1 不认（见 config.Panel.Key 注释）。
+//
+// 🔴 配了账密就不再认前门令牌（2026-11-20）：api_keys 是发给客户端 / SDK 的
+// 推理令牌，按 `sk-<二级域名>` 约定还是**可猜**的。如果它同时能进面板，
+// 等于把「删账号 / 看全部邮箱 / 撤 Key」交给每一个拿到（或猜到）令牌的人。
+// 没配密码的部署保持老行为，升级不用先改配置。
 func (p *Panel) keyStrings() []string {
+	cfg := p.b.Config().Panel
 	out := make([]string, 0, 4)
-	if k := p.b.Config().Panel.PanelKey(); k != "" {
+	if k := cfg.PanelKey(); k != "" {
 		out = append(out, k)
+	}
+	if cfg.PasswordEnabled() {
+		return out
 	}
 	for _, k := range p.b.APIKeys() {
 		if k.Key != "" {

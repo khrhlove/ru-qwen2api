@@ -90,6 +90,37 @@ func TestPanelKeyFallsBackToAPIKeys(t *testing.T) {
 	}
 }
 
+// 配了账密之后，前门令牌**不能**再进面板：它是发出去的推理令牌，按约定还可猜。
+func TestAPIKeyCannotOpenPanelWhenPasswordSet(t *testing.T) {
+	p, _ := withPanel(func(c *config.Config) {
+		c.Panel = config.Panel{Password: "pw-test", SessionHours: 1}
+		c.APIKeys = []string{"sk-front"}
+	})
+
+	// ① 登录接口带 key → 401
+	rec := postJSON(p, "/panel/api/login", `{"key":"sk-front"}`)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("配了密码时前门令牌应 401，得到 %d: %s", rec.Code, rec.Body.String())
+	}
+	if ck := withCookie(rec); ck != nil {
+		t.Fatal("不该给前门令牌下发会话")
+	}
+
+	// ② Bearer 直接打 /panel/api/* → 也不认
+	req := httptest.NewRequest(http.MethodGet, "/panel/api/overview", nil)
+	req.Header.Set("Authorization", "Bearer sk-front")
+	rec2 := httptest.NewRecorder()
+	p.ServeHTTP(rec2, req)
+	if rec2.Code != http.StatusUnauthorized {
+		t.Fatalf("Bearer 前门令牌应 401，得到 %d", rec2.Code)
+	}
+
+	// ③ 账密仍然可用（不能被这条规则误伤）
+	if rec := doLogin(p, "admin", "pw-test"); rec.Code != http.StatusOK {
+		t.Fatalf("账密应 200，得到 %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
 // 脚本 / curl / 书签：请求头或 ?key= 直接带密钥也要能用。
 func TestPanelKeyAsHeader(t *testing.T) {
 	p, _ := withPanel(keyOnly)

@@ -2493,7 +2493,8 @@ function bind() {
     authHasPass = !!sess.password_enabled;
     $('#btnLogout').hidden = sess.method !== 'session';
     if (!sess.authed) {
-      showAuth('key');   // 面板默认密钥登录；账密只是可选后备
+      // 没配面板密钥（例如改用账密）就直接开账密，别让人先撞一次「密钥无效」。
+      showAuth(sess.panel_key || !sess.password_enabled ? 'key' : 'pass');
       return;
     }
   } else if (!key()) {

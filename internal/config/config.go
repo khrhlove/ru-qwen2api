@@ -485,6 +485,8 @@ type Panel struct {
 	// 不再留明文），也可以 Bearer / x-api-key / ?key= 直接带它调 /panel/api/*。
 	//
 	// 留空 ⇒ 回落到 config.api_keys（前门令牌同样能进面板，单 Key 部署最省事）；
+	// 🔴 配了 password / password_hash ⇒ 只认账密，前门令牌不再进面板
+	//   （api_keys 是发给客户端的推理令牌，按 `sk-<二级域名>` 约定可猜，不该带管理权限）；
 	// 两个都空 ⇒ 面板不需要登录（只建议本机/内网）。
 	//
 	// 🔴 这把 Key 只在面板生效，**不会**被 /v1 接受 —— 权限边界保持清晰：
