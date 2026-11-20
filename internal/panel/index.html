@@ -718,6 +718,7 @@ function toast(msg, kind) {
    两种凭据都走 /panel/api/login → HttpOnly 会话 cookie；浏览器里不再留明文凭据。 */
 let authMode = 'key';
 let authHasPass = false;   // 服务端是否还开着一道账密入口（/panel/api/session 告知）
+let authHasKey = true;     // 密钥入口是否还能用（配了账密时只有 panel.key 算）
 let authPrompted = false;  // 本次页面已自动弹过登录框（轮询 401 不再反复顶出来）
 let authNeeded = false;    // 当前处于"未登录"态（顶栏那行可点，点开才重新要凭据）
 /* showAuth 把登录框摆成指定形态。
@@ -732,8 +733,8 @@ function showAuth(mode, reason) {
   $('#authPass').hidden = isKey;
   $('#authKey').hidden = !isKey;
   $('#authTitle').textContent = isKey ? '输入密钥进入' : '登录面板';
-  // 没配密码就别给一个"切过去也登不了"的链接。
-  $('#authSwitchWrap').hidden = !authHasPass;
+  // 两条入口都真能用才给切换链接：配了账密又没配 panel.key 时，密钥那边是死的。
+  $('#authSwitchWrap').hidden = !(authHasPass && authHasKey);
   $('#authSwitch').textContent = isKey ? '改用账号密码登录' : '改用密钥登录';
   $('#keyGo').textContent = isKey ? '进入' : '登录';
   if (first) {
@@ -2491,6 +2492,8 @@ function bind() {
 
   if (sess) {
     authHasPass = !!sess.password_enabled;
+    // 配了账密 ⇒ 服务端只认 panel.key，前门令牌不再进面板；没配账密则仍认 api_keys。
+    authHasKey = !!sess.panel_key || !sess.password_enabled;
     $('#btnLogout').hidden = sess.method !== 'session';
     if (!sess.authed) {
       // 没配面板密钥（例如改用账密）就直接开账密，别让人先撞一次「密钥无效」。
