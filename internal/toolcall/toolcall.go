@@ -25,19 +25,95 @@ import (
 	"strings"
 )
 
-// 上限都是"防炸"而不是"够用"：真实客户端（Cline / Claude Code）单轮 5~20 个工具。
+// 容量上限的定位（2026-11-20 线上教训）：
+//
+//	"防炸"的上限不能拍脑袋 —— 第一版写死 64KB，上线当天 WorkBuddy 在
+//	「完全访问」下带了 **89,154 字节**的工具集，直接被 400 打死。
+//	工具集大小是客户端的正常特征（MCP 工具越多越大），不是协议错误：
+//	超限应当**降级**（本轮不模拟工具、按普通对话/原生 agent 走），而不是拒绝请求。
 const (
-	// MaxTools 单请求最多接受多少个工具定义。
-	MaxTools = 64
-	// MaxSchemaBytes 全部工具定义（name+description+parameters）的字节上限。
-	// 超过就 400：塞进 prompt 的是全文，超了不是"慢一点"，是直接把上下文烧光。
-	MaxSchemaBytes = 64 << 10
+	// DefaultMaxTools 单请求默认最多接受多少个工具定义。
+	// 只作 sanity 上限：真正的成本约束是字节数。
+	DefaultMaxTools = 256
+	// DefaultMaxSchemaBytes 全部工具定义（name+description+parameters）的默认字节上限。
+	// 128KB ≈ 30k tokens；再大就不是"模拟工具"而是拿上下文当垃圾桶了。
+	DefaultMaxSchemaBytes = 128 << 10
 	// MaxCalls 单轮回复里最多接受多少个调用。
 	MaxCalls = 16
 )
 
 // 工具名规范：OpenAI 允许 [a-zA-Z0-9_-]，长度 1~64。
 var nameRe = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
+
+// Limits 单请求的工具容量预算（0 值 = 用默认）。
+type Limits struct {
+	MaxTools       int
+	MaxSchemaBytes int
+}
+
+// Normalized 补齐默认值；负数按 0 处理。
+func (l Limits) Normalized() Limits {
+	if l.MaxTools <= 0 {
+		l.MaxTools = DefaultMaxTools
+	}
+	if l.MaxSchemaBytes <= 0 {
+		l.MaxSchemaBytes = DefaultMaxSchemaBytes
+	}
+	return l
+}
+
+// Validate 只校验**正确性**（名字合法、不重名）。
+//
+// 容量（数量/字节）不在这里报错 —— 交给 Fit 降级。这条区分很重要：
+// 名字错是客户端的 bug（必须让它看见），工具太多是客户端的正常特征（不该打死）。
+func Validate(tools []Tool) error {
+	seen := map[string]bool{}
+	for i, t := range tools {
+		if !nameRe.MatchString(t.Name) {
+			return fmt.Errorf("tools[%d].name=%q 非法（只允许字母/数字/下划线/连字符，1~64 字符）", i, t.Name)
+		}
+		if seen[t.Name] {
+			return fmt.Errorf("tools[%d].name=%q 重复", i, t.Name)
+		}
+		seen[t.Name] = true
+	}
+	return nil
+}
+
+// Size 全部工具定义的字节数（name + description + schema）。
+func Size(tools []Tool) int {
+	total := 0
+	for _, t := range tools {
+		total += len(t.Name) + len(t.Description) + len(t.Schema())
+	}
+	return total
+}
+
+// Fit 按预算裁剪是否启用工具模拟。
+//
+// 返回的 tools 为空 + note 非空 = **本轮跳过工具模拟**（调用方必须把 note
+// 透出到 X-Qwen2API-Warnings，并保持模型原样 —— agent 模型继续走 agent）。
+//
+// 为什么是"全有或全无"而不是截断到前 N 个：截断会让模型看到一个残缺的
+// 工具目录，既可能漏调被丢掉的工具，也可能在 tool_choice 指名时找不到目标。
+// 一个可预测的"本轮没有工具"比一个随机的子集更容易排查。
+func (l Limits) Fit(tools []Tool) ([]Tool, string) {
+	if len(tools) == 0 {
+		return nil, ""
+	}
+	l = l.Normalized()
+	if len(tools) > l.MaxTools {
+		return nil, fmt.Sprintf(
+			"工具数量过多（%d 个，上限 %d）：本轮跳过工具调用模拟，按普通对话处理",
+			len(tools), l.MaxTools)
+	}
+	if size := Size(tools); size > l.MaxSchemaBytes {
+		return nil, fmt.Sprintf(
+			"工具定义过大（%d 字节，上限 %d）：本轮跳过工具调用模拟，按普通对话处理；"+
+				"可在配置 tool_calls.max_schema_bytes 上调", size, l.MaxSchemaBytes)
+	}
+	return tools, ""
+}
 
 // Tool 客户端提供的工具定义（OpenAI / Anthropic 两家的字段并集）。
 type Tool struct {
@@ -160,29 +236,6 @@ func ParseChoice(raw json.RawMessage) Choice {
 		return Choice{Mode: "auto"}
 	}
 	return Choice{Mode: "auto"}
-}
-
-// Validate 校验工具清单。返回错误时调用方应 400（参数名 tools）。
-func Validate(tools []Tool) error {
-	if len(tools) > MaxTools {
-		return fmt.Errorf("工具最多 %d 个（本次 %d 个）", MaxTools, len(tools))
-	}
-	seen := map[string]bool{}
-	total := 0
-	for i, t := range tools {
-		if !nameRe.MatchString(t.Name) {
-			return fmt.Errorf("tools[%d].name=%q 非法（只允许字母/数字/下划线/连字符，1~64 字符）", i, t.Name)
-		}
-		if seen[t.Name] {
-			return fmt.Errorf("tools[%d].name=%q 重复", i, t.Name)
-		}
-		seen[t.Name] = true
-		total += len(t.Name) + len(t.Description) + len(t.Schema())
-	}
-	if total > MaxSchemaBytes {
-		return fmt.Errorf("工具定义过大（%d 字节，上限 %d）：请精简 description / parameters", total, MaxSchemaBytes)
-	}
-	return nil
 }
 
 // Allowed 工具名集合（解析时用于拒绝编造的工具名）。

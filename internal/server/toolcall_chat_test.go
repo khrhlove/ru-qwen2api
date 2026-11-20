@@ -524,3 +524,87 @@ func TestChatToolsStreamFenced(t *testing.T) {
 		t.Fatalf("围栏符号漏进了正文:\n%s", out)
 	}
 }
+
+// TestChatToolsWorkBuddySized WorkBuddy「完全访问」实测 89,154 字节：必须正常模拟。
+func TestChatToolsWorkBuddySized(t *testing.T) {
+	up := newFakeUpstream(t, 0)
+	up.frames = answerFrames(`{"tool_calls":[{"name":"get_weather","arguments":{"city":"北京"}}]}`)
+	h := newTestServer(t, up, 1, nil)
+
+	bigDesc := strings.Repeat("x", 89*1024)
+	// 用内置兜底目录里的 agent 名（qwen3.8-max-agent），否则测试环境认不出 agent。
+	body := `{"model":"qwen3.8-max-agent","messages":[{"role":"user","content":"今天天气如何"}],
+		"tools":[{"type":"function","function":{"name":"get_weather","description":"` + bigDesc + `","parameters":{"type":"object"}}}]}`
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body)))
+
+	if rec.Code != 200 {
+		t.Fatalf("89KB 工具集应被接受，得到 %d: %s", rec.Code, rec.Body.String())
+	}
+	submitted, _ := json.Marshal(up.gotSubmit)
+	if !strings.Contains(string(submitted), "工具调用协议") {
+		t.Fatal("默认预算内应注入协议块")
+	}
+	warn, _ := url.QueryUnescape(rec.Header().Get("X-Qwen2API-Warnings"))
+	if strings.Contains(warn, "跳过") {
+		t.Fatalf("默认预算内不该跳过: %q", warn)
+	}
+	// agent + tools 仍然降级（这条与容量无关）
+	if strings.Contains(string(submitted), "agent_mode") {
+		t.Fatal("agent + tools 应降级到底座普通模型")
+	}
+}
+
+// TestChatToolsOversizeDegrades 线上事故回归（2026-11-20）：WorkBuddy「完全访问」
+// 带 89KB 工具集，第一版 64KB 上限直接 400，把 qwen4-max-agent 打成不可用。
+// 正确行为：200、跳过工具模拟、告警头说明，**模型保持原样（agent 仍是 agent）**。
+func TestChatToolsOversizeDegrades(t *testing.T) {
+	up := newFakeUpstream(t, 0)
+	h := newTestServer(t, up, 1, nil)
+
+	bigDesc := strings.Repeat("x", 200*1024)
+	// 用内置兜底目录里的 agent 名（qwen3.8-max-agent），否则测试环境认不出 agent。
+	body := `{"model":"qwen3.8-max-agent","messages":[{"role":"user","content":"今天天气如何"}],
+		"tools":[{"type":"function","function":{"name":"get_weather","description":"` + bigDesc + `","parameters":{"type":"object"}}}]}`
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body)))
+
+	if rec.Code != 200 {
+		t.Fatalf("超限不该 400，得到 %d: %s", rec.Code, rec.Body.String())
+	}
+	submitted, _ := json.Marshal(up.gotSubmit)
+	if strings.Contains(string(submitted), "工具调用协议") {
+		t.Fatal("超限时不应注入协议块")
+	}
+	// 不能因为跳过了工具就把 agent 降级成普通模型：跳过 ≠ 需要降级。
+	if !strings.Contains(string(submitted), "agent_mode") {
+		t.Fatalf("超限跳过工具时应保持 agent 模式: %s", submitted)
+	}
+	warn, _ := url.QueryUnescape(rec.Header().Get("X-Qwen2API-Warnings"))
+	if !strings.Contains(warn, "跳过工具调用模拟") {
+		t.Fatalf("应显式说明跳过原因: %q", warn)
+	}
+}
+
+// TestChatToolsTooManyDegrades 数量超限同样只降级、不 400。
+func TestChatToolsTooManyDegrades(t *testing.T) {
+	up := newFakeUpstream(t, 0)
+	h := newTestServer(t, up, 1, nil)
+
+	var tools []string
+	for i := 0; i < 300; i++ {
+		tools = append(tools, fmt.Sprintf(`{"type":"function","function":{"name":"t%d"}}`, i))
+	}
+	body := `{"model":"qwen3.8-omni-flash","messages":[{"role":"user","content":"hi"}],"tools":[` +
+		strings.Join(tools, ",") + `]}`
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body)))
+
+	if rec.Code != 200 {
+		t.Fatalf("数量超限不该 400，得到 %d: %s", rec.Code, rec.Body.String())
+	}
+	warn, _ := url.QueryUnescape(rec.Header().Get("X-Qwen2API-Warnings"))
+	if !strings.Contains(warn, "工具数量过多") {
+		t.Fatalf("应说明数量超限: %q", warn)
+	}
+}

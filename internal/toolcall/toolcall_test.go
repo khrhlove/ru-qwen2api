@@ -172,7 +172,7 @@ func TestDecide(t *testing.T) {
 	}
 }
 
-func TestValidate(t *testing.T) {
+func TestValidateChecksNamesOnly(t *testing.T) {
 	if err := Validate(weather()); err != nil {
 		t.Errorf("合法清单报错: %v", err)
 	}
@@ -182,16 +182,43 @@ func TestValidate(t *testing.T) {
 	if err := Validate([]Tool{{Name: "dup"}, {Name: "dup"}}); err == nil {
 		t.Error("重名应报错")
 	}
-	many := make([]Tool, MaxTools+1)
+	// 容量不是 Validate 的事：它只查正确性（超限由 Fit 降级）。
+	many := make([]Tool, DefaultMaxTools+1)
 	for i := range many {
 		many[i] = Tool{Name: "t" + string(rune('a'+i%26)) + string(rune('a'+i/26))}
 	}
-	if err := Validate(many); err == nil {
-		t.Error("超过数量上限应报错")
+	if err := Validate(many); err != nil {
+		t.Errorf("数量超限不该在 Validate 报错: %v", err)
 	}
-	big := []Tool{{Name: "big", Description: strings.Repeat("x", MaxSchemaBytes+1)}}
-	if err := Validate(big); err == nil {
-		t.Error("超过字节上限应报错")
+}
+
+func TestFit(t *testing.T) {
+	// 正常：原样返回，没有说明
+	if got, note := (Limits{}).Fit(weather()); len(got) != 1 || note != "" {
+		t.Fatalf("正常清单应原样通过: %d %q", len(got), note)
+	}
+	// 数量超限：降级（返回空 + 说明），不报错
+	many := make([]Tool, 5)
+	for i := range many {
+		many[i] = Tool{Name: "t" + string(rune('a'+i))}
+	}
+	got, note := Limits{MaxTools: 3}.Fit(many)
+	if len(got) != 0 || !strings.Contains(note, "工具数量过多") {
+		t.Fatalf("数量超限应降级: %d %q", len(got), note)
+	}
+	// 字节超限：降级
+	big := []Tool{{Name: "big", Description: strings.Repeat("x", 2048)}}
+	got, note = Limits{MaxSchemaBytes: 1024}.Fit(big)
+	if len(got) != 0 || !strings.Contains(note, "工具定义过大") {
+		t.Fatalf("字节超限应降级: %d %q", len(got), note)
+	}
+	// 线上真实量级：89154 字节在默认预算（128KB）内必须能过
+	if Size(big) > DefaultMaxSchemaBytes {
+		t.Skip("构造的样例比默认预算还大，跳过默认预算断言")
+	}
+	huge := []Tool{{Name: "wb", Description: strings.Repeat("y", 89154)}}
+	if got, note := (Limits{}).Fit(huge); len(got) != 1 || note != "" {
+		t.Fatalf("89KB 的工具集应在默认预算内通过（WorkBuddy 实测值）: %q", note)
 	}
 }
 

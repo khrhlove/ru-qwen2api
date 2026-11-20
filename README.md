@@ -554,7 +554,7 @@ POST /v1/chat/completions
 | `tool_choice: "none"` | 协议块不注入，本轮按普通对话回答（同时打警告头） |
 | 服务端 `tool_calls.enabled=false` | 忽略 `tools`，按普通对话回答，并打警告头说明未生效 |
 | 模型是 `*-agent` 且带 `tools` | 降级到底座普通模型。实测 `qwen3.8-flash-agent` 收到 `get_weather` 会回「我没有这个工具」，然后改用**自带联网搜索**代偿——客户端工具永远不触发，却拿到一个看似完成的结果（比报错更难查） |
-| 单轮工具数 / schema 体积 | 上限 64 个 / 64KB，超了 400（`param=tools`）——它要整段进 prompt，不是免费字段 |
+| 单轮工具数 / schema 体积 | 默认预算 256 个 / 128KB（`tool_calls.max_tools` / `max_schema_bytes`）。**超限只降级**：本轮跳过工具模拟、模型按原样跑（agent 仍是 agent），并在警告头说明——**不返回 400**。只有**名字非法/重名**才 400（那是客户端 bug） |
 
 ### 错误语义（客户端看到什么）
 
@@ -917,6 +917,7 @@ internal/reqlog/     请求流水（环形缓冲 + stdout 一行）
 | **文生视频** `POST /api/v3/contents/generations/tasks` | ✅ 2.7s 拿到 `tsk_…`（回包只有 `id`） |
 | **视频轮询 + 产物** | ✅ 约 15 分钟 `queued → in_progress → completed`，产物 `cdn.qwenlm.ai/.../t2v/….mp4`，1.7MB 可下 |
 | **工具调用（协议遵循）** | ✅ 线上实测（2026-11-20，prompt 为网关真实渲染文本）：单工具 / 双工具 / 不需要工具 / 工具结果续答 共 4 种场景 **4/4 遵守**——需要时输出纯 JSON（含 ```json 围栏），不需要时正常作答，喂回工具结果后直接用自然语言回答、不再重复调用 |
+| **工具调用（容量降级）** | ✅ 回归用例：89KB（WorkBuddy 实测值）→ 200 且正常模拟；200KB → 200 且跳过模拟并告警；300 个工具 → 200 且降级。均不再 400 |
 | **工具调用（网关转换）** | ✅ 单测覆盖三前门：chat `tool_calls` + `finish_reason=tool_calls`、Anthropic `tool_use` + `stop_reason=tool_use`、Responses `function_call`；流式与非流式同判定（`toolcall.LooksLikePayload`） |
 
 ## 视频按积分计费（余额是唯一真口径）
@@ -1104,7 +1105,10 @@ QWEN2API_STORAGE_ACCESS_KEY=... QWEN2API_STORAGE_SECRET_KEY=...
   （协议里已明确要求，实测 5/5 遵守）；
   ④ 带 `tools` 时**强制发全量 prompt**（协议块必须每轮可见，增量会让第二轮丢协议），
   且 agent 模型会降级到底座普通模型（实测它会用自己的联网搜索绕开客户端工具）；
-  ⑤ 每轮都会带 `X-Qwen2API-Warnings: 工具调用由网关模拟…`。
+  ⑤ 每轮都会带 `X-Qwen2API-Warnings: 工具调用由网关模拟…`；
+  ⑥ 工具集大小是**客户端的正常特征**（MCP 越多越大）。默认预算 128KB/256 个，超了
+  只跳过模拟、不拒绝请求——2026-11-20 的教训是第一版写死 64KB，WorkBuddy 在
+  「完全访问」下带 89,154 字节，直接把 `qwen4-max-agent` 打成 400 不可用。
 - **无排队**：容量不足直接 429（这是同步链路，排队只会让客户端以为卡死）。
 - **多轮靠拍平**：网关无状态、每请求新建会话，历史被拼进单条 prompt。省 token 的
   「复用 chat_id + parent 链」是后续优化项，当前不做（串味风险 > 那一次上游调用）。

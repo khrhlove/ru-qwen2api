@@ -88,9 +88,15 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 		if !s.conf().ToolCallEnabled() {
 			tools = nil
 			toolNote = "服务端已关闭工具调用模拟（tool_calls.enabled=false），本轮 tools 未生效"
-		} else if err := toolcall.Validate(tools); err != nil {
-			writeErrorParam(w, http.StatusBadRequest, "invalid_request_error", err.Error(), "tools")
-			return
+		} else {
+			// 名字非法是客户端的 bug（400）；容量超限只是降级（跳过模拟）。
+			if err := toolcall.Validate(tools); err != nil {
+				writeErrorParam(w, http.StatusBadRequest, "invalid_request_error", err.Error(), "tools")
+				return
+			}
+			var note string
+			tools, note = s.conf().ToolCallLimits().Fit(tools)
+			toolNote = joinDegraded(toolNote, note)
 		}
 	}
 	if proto := toolcall.Prompt(tools, toolcall.ParseChoice(req.ToolChoice)); proto != "" {
@@ -368,8 +374,11 @@ func (s *Server) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 			writeErrorParam(w, http.StatusBadRequest, "invalid_request_error", err.Error(), "tools")
 			return
 		}
-		if proto := toolcall.Prompt(req.Tools, toolcall.ParseChoice(req.ToolChoice)); proto != "" {
-			msgs = append(msgs, ChatMessage{Role: "system", Content: mustJSON(proto)})
+		// 容量超限只是不模拟工具，估算照常返回（客户端不该因此拿 400）。
+		if fit, _ := s.conf().ToolCallLimits().Fit(req.Tools); len(fit) > 0 {
+			if proto := toolcall.Prompt(fit, toolcall.ParseChoice(req.ToolChoice)); proto != "" {
+				msgs = append(msgs, ChatMessage{Role: "system", Content: mustJSON(proto)})
+			}
 		}
 	}
 	flat, err := Flatten(msgs)

@@ -16,6 +16,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/yuanjie-ai/qwen2api/internal/toolcall"
 )
 
 // Account 一个账号 = 一份浏览器登录态凭据。
@@ -479,6 +481,15 @@ type Config struct {
 type ToolCalls struct {
 	// Enabled 是否启用（默认 true）。false = 忽略 tools，按普通对话回答。
 	Enabled *bool `json:"enabled,omitempty"`
+	// MaxTools 单请求最多接受多少个工具定义（默认 256）。
+	// 超限 ⇒ 本轮跳过工具模拟（不报错）。
+	MaxTools int `json:"max_tools,omitempty"`
+	// MaxSchemaBytes 全部工具定义的字节上限（默认 131072 = 128KB，约 30k tokens）。
+	// 超限 ⇒ 本轮跳过工具模拟（不报错）。
+	//
+	// 🔴 为什么要留这个旋钮：WorkBuddy 在「完全访问」下实测带 89,154 字节
+	// 的工具集，第一版写死 64KB 直接把请求 400 掉了。
+	MaxSchemaBytes int `json:"max_schema_bytes,omitempty"`
 }
 
 // Panel 管理面板的登录.
@@ -869,6 +880,17 @@ func (c Config) ReasoningEnabled() bool {
 // 关掉之后带 tools 的请求仍会正常返回，只是按普通对话作答并打警告头。
 func (c Config) ToolCallEnabled() bool {
 	return c.ToolCalls.Enabled == nil || *c.ToolCalls.Enabled
+}
+
+// ToolCallLimits 工具容量预算（0 值 ⇒ 包内默认 256 个 / 128KB）。
+//
+// 超限的行为是**降级**（本轮不模拟工具、模型原样跑），不是 400 ——
+// 工具集大小是客户端的正常特征，不该让整个请求不可用。
+func (c Config) ToolCallLimits() toolcall.Limits {
+	return toolcall.Limits{
+		MaxTools:       c.ToolCalls.MaxTools,
+		MaxSchemaBytes: c.ToolCalls.MaxSchemaBytes,
+	}.Normalized()
 }
 
 // DialogStickyEnabled 是否让 Agent 复用上游会话（默认 true）。

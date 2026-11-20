@@ -49,9 +49,15 @@ func (s *Server) handleResponses(w http.ResponseWriter, r *http.Request) {
 		if !s.conf().ToolCallEnabled() {
 			tools = nil
 			toolNote = "服务端已关闭工具调用模拟（tool_calls.enabled=false），本轮 tools 未生效"
-		} else if err := toolcall.Validate(tools); err != nil {
-			writeErrorParam(w, http.StatusBadRequest, "invalid_request_error", err.Error(), "tools")
-			return
+		} else {
+			// 名字非法是客户端的 bug（400）；容量超限只是降级（跳过模拟）。
+			if err := toolcall.Validate(tools); err != nil {
+				writeErrorParam(w, http.StatusBadRequest, "invalid_request_error", err.Error(), "tools")
+				return
+			}
+			var note string
+			tools, note = s.conf().ToolCallLimits().Fit(tools)
+			toolNote = joinDegraded(toolNote, note)
 		}
 	}
 	if proto := toolcall.Prompt(tools, toolcall.ParseChoice(req.ToolChoice)); proto != "" {

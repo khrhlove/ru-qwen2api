@@ -141,20 +141,33 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 工具调用：上游没有函数调用通道，这里把 tools 翻译成 prompt 协议
-	// （见 internal/toolcall）。关闭开关时按"未生效"处理并显式告警，
-	// 绝不静默丢弃 —— 客户端会以为是模型不支持工具。
+	// （见 internal/toolcall）。两条纪律：
+	//   - 关掉开关 / 容量超限 ⇒ **降级**（tools 置空、模型原样），只看不拒；
+	//   - 名字非法 / 重名 ⇒ 400（那是客户端的 bug，必须让它看见）。
+	// 2026-11-20 线上教训：第一版把容量也当 400，WorkBuddy「完全访问」带
+	// 89KB 工具集直接把 qwen4-max-agent 打成不可用。
 	tools := req.Tools
 	var toolNote string
 	if len(tools) > 0 {
-		if !s.conf().ToolCallEnabled() {
+		switch {
+		case !s.conf().ToolCallEnabled():
 			tools = nil
 			toolNote = "服务端已关闭工具调用模拟（tool_calls.enabled=false），本轮 tools 未生效"
-		} else if err := toolcall.Validate(tools); err != nil {
-			entry.Status = http.StatusBadRequest
-			entry.Error = "tools: " + err.Error()
-			s.addReq(&entry)
-			writeErrorParam(w, http.StatusBadRequest, "invalid_request_error", err.Error(), "tools")
-			return
+		default:
+			if err := toolcall.Validate(tools); err != nil {
+				entry.Status = http.StatusBadRequest
+				entry.Error = "tools: " + err.Error()
+				s.addReq(&entry)
+				writeErrorParam(w, http.StatusBadRequest, "invalid_request_error", err.Error(), "tools")
+				return
+			}
+			var note string
+			tools, note = s.conf().ToolCallLimits().Fit(tools)
+			toolNote = joinDegraded(toolNote, note)
+			if note != "" {
+				// 降级也要进流水："报了但看不出来"是这类静默回退最典型的排查困境。
+				entry.Degraded = joinDegraded(entry.Degraded, note)
+			}
 		}
 	}
 
@@ -238,7 +251,9 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	entry.Model = model
 	entry.Alias = alias
 	entry.Stream = req.Stream
-	entry.Degraded = flat.Degraded
+	// 保留前面（工具容量降级等）已经记下的说明：这里只叠加拍平信息，
+	// 直接赋值会把"工具超限已跳过"抹掉，排查时看不见真因。
+	entry.Degraded = joinDegraded(flat.Degraded, entry.Degraded)
 
 	// 文件解析仍走 t2t（2026-10-28 实测：t2t + files[] 就能读文件内容）。
 	//
