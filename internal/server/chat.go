@@ -439,6 +439,11 @@ func (s *Server) openUpstreamSpec(ctx context.Context, blobBase, model, gear str
 			if !renewable || !s.renewableErr(acct, err) {
 				break
 			}
+			// 🔴 上游刚刚明确拒绝这张票，本地 exp 还剩多少都不作数：relogin 开头
+			// 有"还新鲜就别换"的短路，不清掉新鲜度它会原地返回 true，用同一张
+			// 死票重试必然再 401 —— 接着就是 MarkAuth 停用这个号（auth_dead
+			// 不在任何自愈候选里，只能面板复活或重启）。
+			s.pool.MarkTokenStale(acct.Name)
 			if !s.relogin(ctx, acct) {
 				break
 			}
