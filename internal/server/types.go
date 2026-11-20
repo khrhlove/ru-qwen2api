@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	"github.com/yuanjie-ai/qwen2api/internal/toolcall"
 )
 
 // maxRequestBody 单个请求体上限（字节）。
@@ -30,6 +32,21 @@ type ChatRequest struct {
 	ReasoningEffort string `json:"reasoning_effort,omitempty"`
 	// User 仅作日志/粘性键，不影响上游。
 	User string `json:"user,omitempty"`
+	// Tools / ToolChoice 客户端函数调用声明（OpenAI 形态）。
+	//
+	// 🔴 上游没有函数调用通道，这两个字段由网关**翻译**成 prompt 协议
+	// （internal/toolcall）：进把 schema 写进系统指令，出把模型输出的 JSON
+	// 解析回 tool_calls。这是协议适配，不是"假装支持"——解析不出就退回纯文本。
+	Tools      []toolcall.Tool `json:"tools,omitempty"`
+	ToolChoice json.RawMessage `json:"tool_choice,omitempty"`
+	// ParallelToolCalls 仅作日志/语义提示：上游一次回复本来就能给多个调用，
+	// 这里不做并行度控制（false 时也不阻止模型给多个，只是不额外鼓励）。
+	ParallelToolCalls *bool `json:"parallel_tool_calls,omitempty"`
+}
+
+// ToolChoiceMode 归一后的 tool_choice。空 = 客户端没传 ⇒ auto。
+func (r ChatRequest) ToolChoiceMode() toolcall.Choice {
+	return toolcall.ParseChoice(r.ToolChoice)
 }
 
 // ChatMessage 一条消息。content 允许 string 或 [{"type":"text","text":...}]。
@@ -37,6 +54,26 @@ type ChatMessage struct {
 	Role    string          `json:"role"`
 	Content json.RawMessage `json:"content"`
 	Name    string          `json:"name,omitempty"`
+	// ToolCalls assistant 消息里的历史工具调用（多轮回传时用）。
+	//
+	// 🔴 必须渲染进 prompt：模型下一轮要知道"自己上轮调了什么、参数是什么"，
+	// 否则工具结果在它眼里是一段没有来处的 JSON（实测会重新调一遍）。
+	ToolCalls []ToolCallMsg `json:"tool_calls,omitempty"`
+	// ToolCallID role=tool 消息对应的调用 id，用于把结果和调用配对。
+	ToolCallID string `json:"tool_call_id,omitempty"`
+}
+
+// ToolCallMsg 历史里的工具调用（请求侧形态，arguments 是 JSON 字符串）。
+type ToolCallMsg struct {
+	ID       string           `json:"id,omitempty"`
+	Type     string           `json:"type,omitempty"`
+	Function ToolCallFunction `json:"function"`
+}
+
+// ToolCallFunction 调用名与参数（参数是 JSON 字符串，OpenAI 的约定）。
+type ToolCallFunction struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
 }
 
 // ContentPart 一段内容。文本 / 图片 / 文件三种在实现里都用同一结构接，
@@ -272,6 +309,35 @@ type ResponseMessage struct {
 	Role             string `json:"role"`
 	Content          string `json:"content"`
 	ReasoningContent string `json:"reasoning_content,omitempty"`
+	// ToolCalls 非空时 finish_reason=tool_calls，content 通常为空串。
+	ToolCalls []ResponseToolCall `json:"tool_calls,omitempty"`
+}
+
+// ResponseToolCall OpenAI 非流式 tool_calls 元素。
+type ResponseToolCall struct {
+	ID       string           `json:"id"`
+	Type     string           `json:"type"`
+	Function ResponseFunction `json:"function"`
+}
+
+// ResponseFunction 调用名与参数（arguments 是 JSON **字符串**，OpenAI 的约定）。
+type ResponseFunction struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
+}
+
+// StreamToolCall 流式增量里的 tool_calls 元素（带 index 供客户端拼接）。
+type StreamToolCall struct {
+	Index    int             `json:"index"`
+	ID       string          `json:"id,omitempty"`
+	Type     string          `json:"type,omitempty"`
+	Function *StreamFunction `json:"function,omitempty"`
+}
+
+// StreamFunction 流式增量里的函数名/参数片段。
+type StreamFunction struct {
+	Name      string `json:"name,omitempty"`
+	Arguments string `json:"arguments,omitempty"`
 }
 
 // Choice 非流式选择项。
@@ -293,9 +359,10 @@ type ChatResponse struct {
 
 // Delta 流式增量。
 type Delta struct {
-	Role             string `json:"role,omitempty"`
-	Content          string `json:"content,omitempty"`
-	ReasoningContent string `json:"reasoning_content,omitempty"`
+	Role             string           `json:"role,omitempty"`
+	Content          string           `json:"content,omitempty"`
+	ReasoningContent string           `json:"reasoning_content,omitempty"`
+	ToolCalls        []StreamToolCall `json:"tool_calls,omitempty"`
 }
 
 // StreamChoice 流式选择项。

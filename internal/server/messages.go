@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/yuanjie-ai/qwen2api/internal/toolcall"
 	"github.com/yuanjie-ai/qwen2api/internal/upstream"
 )
 
@@ -21,11 +22,13 @@ import (
 // 假 signature 会让客户端校验失败）；推理内容只走 chat 门的 reasoning_content。
 
 type anthropicRequest struct {
-	Model     string             `json:"model"`
-	System    json.RawMessage    `json:"system"`
-	Messages  []anthropicMessage `json:"messages"`
-	MaxTokens int                `json:"max_tokens"`
-	Stream    bool               `json:"stream"`
+	Model      string             `json:"model"`
+	System     json.RawMessage    `json:"system"`
+	Messages   []anthropicMessage `json:"messages"`
+	MaxTokens  int                `json:"max_tokens"`
+	Stream     bool               `json:"stream"`
+	Tools      []toolcall.Tool    `json:"tools,omitempty"`
+	ToolChoice json.RawMessage    `json:"tool_choice,omitempty"`
 }
 
 type anthropicMessage struct {
@@ -38,15 +41,26 @@ type anthropicTextBlock struct {
 	Text string `json:"text,omitempty"`
 }
 
+// anthropicToolUseBlock Anthropic 的工具调用内容块。
+//
+// Input 是 **JSON 对象**（不是字符串）—— 这是 Anthropic 与 OpenAI 的关键差异，
+// 客户端（Claude Code）直接按对象读。
+type anthropicToolUseBlock struct {
+	Type  string          `json:"type"`
+	ID    string          `json:"id"`
+	Name  string          `json:"name"`
+	Input json.RawMessage `json:"input"`
+}
+
 type anthropicResponse struct {
-	ID           string               `json:"id"`
-	Type         string               `json:"type"`
-	Role         string               `json:"role"`
-	Model        string               `json:"model"`
-	Content      []anthropicTextBlock `json:"content"`
-	StopReason   string               `json:"stop_reason"`
-	StopSequence string               `json:"stop_sequence,omitempty"`
-	Usage        anthropicUsage       `json:"usage"`
+	ID           string         `json:"id"`
+	Type         string         `json:"type"`
+	Role         string         `json:"role"`
+	Model        string         `json:"model"`
+	Content      []any          `json:"content"`
+	StopReason   string         `json:"stop_reason"`
+	StopSequence string         `json:"stop_sequence,omitempty"`
+	Usage        anthropicUsage `json:"usage"`
 }
 
 type anthropicUsage struct {
@@ -65,6 +79,31 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request_error", err.Error())
 		return
+	}
+	// 工具调用：与 chat 门同一套翻译（见 internal/toolcall），协议块作为
+	// 最后一条 system 注入。
+	tools := req.Tools
+	var toolNote string
+	if len(tools) > 0 {
+		if !s.conf().ToolCallEnabled() {
+			tools = nil
+			toolNote = "服务端已关闭工具调用模拟（tool_calls.enabled=false），本轮 tools 未生效"
+		} else if err := toolcall.Validate(tools); err != nil {
+			writeErrorParam(w, http.StatusBadRequest, "invalid_request_error", err.Error(), "tools")
+			return
+		}
+	}
+	if proto := toolcall.Prompt(tools, toolcall.ParseChoice(req.ToolChoice)); proto != "" {
+		msgs = append(msgs, ChatMessage{Role: "system", Content: mustJSON(proto)})
+	}
+	if len(tools) > 0 {
+		warns := []string{"工具调用由网关模拟（上游无函数调用通道）：模型可能不遵守协议，解析失败会退回纯文本"}
+		if toolNote != "" {
+			warns = append(warns, toolNote)
+		}
+		setMediaWarnings(w, warns)
+	} else if toolNote != "" {
+		setMediaWarnings(w, []string{toolNote})
 	}
 	flat, err := Flatten(msgs)
 	if err != nil {
@@ -90,7 +129,11 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 	// Agent 模型（qwen3.8-*-agent）走 agent_mode，其余走 t2t（§10.1）。
 	// 别名只影响路由，响应回显客户端原名（同 chat 前门）。
 	routeModel, _ := s.routeModel(model)
-	upModel, spec, _ := s.agentSpecFor(routeModel)
+	upModel, spec, isAgent := s.agentSpecFor(routeModel)
+	// Agent 自带服务端工具集，与客户端 tools 混用会打架（同 chat 门口径）。
+	if isAgent && len(tools) > 0 {
+		spec = upstream.TextSpec()
+	}
 	spec.ImageRefs = imgRefs
 	sd, err := s.openUpstream(r.Context(), s.blobBase(r), upModel, s.conf().DefaultThinking, flat.Prompt, spec)
 	if err != nil {
@@ -125,10 +168,34 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 				break
 			}
 		}
+		// 工具解析：与 chat 门同一判定（回复以 { 或 ``` 开头才尝试），
+		// 解析不通过就是普通文本，不伪造 tool_use。
+		var (
+			toolCalls []toolcall.Call
+			text      = sb.String()
+		)
+		if len(tools) > 0 {
+			if calls, rest, ok := toolcall.Parse(text, toolcall.Allowed(tools)); ok {
+				toolCalls, text = calls, rest
+			}
+		}
+		blocks := make([]any, 0, len(toolCalls)+1)
+		if text != "" || len(toolCalls) == 0 {
+			blocks = append(blocks, anthropicTextBlock{Type: "text", Text: text})
+		}
+		for _, c := range toolCalls {
+			blocks = append(blocks, anthropicToolUseBlock{
+				Type: "tool_use", ID: c.ID, Name: c.Name, Input: json.RawMessage(c.Arguments),
+			})
+		}
+		stop := "end_turn"
+		if len(toolCalls) > 0 {
+			stop = "tool_use"
+		}
 		resp := anthropicResponse{
 			ID: id, Type: "message", Role: "assistant", Model: model,
-			Content:    []anthropicTextBlock{{Type: "text", Text: sb.String()}},
-			StopReason: "end_turn",
+			Content:    blocks,
+			StopReason: stop,
 		}
 		if usage != nil {
 			resp.Usage = anthropicUsage{InputTokens: usage.InputTokens, OutputTokens: usage.OutputTokens}
@@ -158,12 +225,34 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 			"usage": map[string]any{"input_tokens": 0, "output_tokens": 0},
 		},
 	})
-	s.anthropicEvent(w, flusher, "content_block_start", map[string]any{
-		"type": "content_block_start", "index": 0,
-		"content_block": map[string]any{"type": "text", "text": ""},
-	})
-
-	var usage *upstream.Usage
+	// 内容块是**惰性开启**的：Anthropic 要求每个 start 都有对应的 stop，
+	// 而"本轮到底是文本还是 tool_use"要等整段回复才定。预先开一个空 text 块
+	// 会在纯工具调用时留下一个 `text:""` 的鬼块（Claude Code 会渲染成空提示）。
+	var (
+		usage       *upstream.Usage
+		blockIdx    int
+		textStarted bool
+		allowed     = toolcall.Allowed(tools)
+		hold        = len(tools) > 0
+		pending     strings.Builder
+	)
+	startTextBlock := func() {
+		if textStarted {
+			return
+		}
+		textStarted = true
+		s.anthropicEvent(w, flusher, "content_block_start", map[string]any{
+			"type": "content_block_start", "index": blockIdx,
+			"content_block": map[string]any{"type": "text", "text": ""},
+		})
+	}
+	emitTextDelta := func(text string) {
+		startTextBlock()
+		s.anthropicEvent(w, flusher, "content_block_delta", map[string]any{
+			"type": "content_block_delta", "index": blockIdx,
+			"delta": map[string]any{"type": "text_delta", "text": text},
+		})
+	}
 	for {
 		ev, more, err := sd.stream.Next()
 		if err != nil {
@@ -182,19 +271,67 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 			usage = ev.Usage
 		}
 		if ev.Text != "" {
-			s.anthropicEvent(w, flusher, "content_block_delta", map[string]any{
-				"type": "content_block_delta", "index": 0,
-				"delta": map[string]any{"type": "text_delta", "text": ev.Text},
-			})
+			if !hold {
+				emitTextDelta(ev.Text)
+			} else {
+				pending.WriteString(ev.Text)
+				h, _ := toolcall.Decide(pending.String())
+				if !h {
+					hold = false
+					emitTextDelta(pending.String())
+					pending.Reset()
+				}
+			}
 		}
 		if ev.Done {
 			break
 		}
 	}
 
-	s.anthropicEvent(w, flusher, "content_block_stop", map[string]any{
-		"type": "content_block_stop", "index": 0,
-	})
+	// 判定 + 收尾：解析不通过就按普通文本补发，绝不伪造 tool_use。
+	var toolCalls []toolcall.Call
+	if pending.Len() > 0 {
+		if calls, rest, ok := toolcall.Parse(pending.String(), allowed); ok {
+			toolCalls = calls
+			if rest != "" {
+				emitTextDelta(rest)
+			}
+		} else {
+			emitTextDelta(pending.String())
+		}
+		pending.Reset()
+	}
+	// 正文块还没开过、也不是工具调用 ⇒ 空回复也要给一个 text 块，
+	// 否则客户端等不到任何内容块（协议上是合法的，但表现为"卡住"）。
+	if !textStarted && len(toolCalls) == 0 {
+		startTextBlock()
+	}
+	stop := "end_turn"
+	if len(toolCalls) > 0 {
+		stop = "tool_use"
+	}
+	if textStarted {
+		s.anthropicEvent(w, flusher, "content_block_stop", map[string]any{
+			"type": "content_block_stop", "index": blockIdx,
+		})
+		blockIdx++
+	}
+	for _, c := range toolCalls {
+		s.anthropicEvent(w, flusher, "content_block_start", map[string]any{
+			"type": "content_block_start", "index": blockIdx,
+			"content_block": map[string]any{
+				"type": "tool_use", "id": c.ID, "name": c.Name, "input": map[string]any{},
+			},
+		})
+		s.anthropicEvent(w, flusher, "content_block_delta", map[string]any{
+			"type": "content_block_delta", "index": blockIdx,
+			"delta": map[string]any{"type": "input_json_delta", "partial_json": c.Arguments},
+		})
+		s.anthropicEvent(w, flusher, "content_block_stop", map[string]any{
+			"type": "content_block_stop", "index": blockIdx,
+		})
+		blockIdx++
+	}
 	usageOut := map[string]any{"output_tokens": 0}
 	if usage != nil {
 		usageOut["output_tokens"] = usage.OutputTokens
@@ -202,7 +339,7 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 	}
 	s.anthropicEvent(w, flusher, "message_delta", map[string]any{
 		"type":  "message_delta",
-		"delta": map[string]any{"stop_reason": "end_turn", "stop_sequence": nil},
+		"delta": map[string]any{"stop_reason": stop, "stop_sequence": nil},
 		"usage": usageOut,
 	})
 	s.anthropicEvent(w, flusher, "message_stop", map[string]any{"type": "message_stop"})
@@ -223,6 +360,17 @@ func (s *Server) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request_error", err.Error())
 		return
+	}
+	// 工具协议的 token 也要算进去：客户端拿这个数判断能否塞进上下文，
+	// 少算一段 schema 会让它在大工具集上误判。
+	if len(req.Tools) > 0 && s.conf().ToolCallEnabled() {
+		if err := toolcall.Validate(req.Tools); err != nil {
+			writeErrorParam(w, http.StatusBadRequest, "invalid_request_error", err.Error(), "tools")
+			return
+		}
+		if proto := toolcall.Prompt(req.Tools, toolcall.ParseChoice(req.ToolChoice)); proto != "" {
+			msgs = append(msgs, ChatMessage{Role: "system", Content: mustJSON(proto)})
+		}
 	}
 	flat, err := Flatten(msgs)
 	if err != nil {
@@ -257,19 +405,102 @@ func (s *Server) anthropicEvent(w http.ResponseWriter, f http.Flusher, event str
 }
 
 // anthropicToChat Anthropic messages → 内部 chat messages。
+//
+// 工具块的处理（这是 Claude Code 能跑起来的关键）：
+//   - assistant 里的 `tool_use` → ChatMessage.ToolCalls（拍平时渲染成「调用工具」）
+//   - user 里的 `tool_result`  → 单独的 role=tool 消息（带 tool_call_id 回配对）
+//
+// 之前这两类块一律 400；现在有了工具模拟就得真的翻译，否则 Claude Code 的
+// 第二轮历史（工具结果）根本进不来。
 func anthropicToChat(req anthropicRequest) ([]ChatMessage, error) {
 	var out []ChatMessage
 	if sys := anthropicText(req.System); sys != "" {
 		out = append(out, ChatMessage{Role: "system", Content: mustJSON(sys)})
 	}
 	for _, m := range req.Messages {
-		content, err := anthropicContentRaw(m.Content)
-		if err != nil {
-			return nil, err
+		// 纯字符串形态：最常见的单消息，直接过。
+		var plain string
+		if err := json.Unmarshal(m.Content, &plain); err == nil {
+			out = append(out, ChatMessage{Role: m.Role, Content: mustJSON(plain)})
+			continue
 		}
-		out = append(out, ChatMessage{Role: m.Role, Content: content})
+		var parts []json.RawMessage
+		if err := json.Unmarshal(m.Content, &parts); err != nil {
+			return nil, errContentShape
+		}
+		var (
+			keep    []json.RawMessage
+			calls   []ToolCallMsg
+			results []ChatMessage
+		)
+		for _, p := range parts {
+			var head struct {
+				Type string `json:"type"`
+			}
+			_ = json.Unmarshal(p, &head)
+			switch head.Type {
+			case "tool_use":
+				var tu struct {
+					ID    string          `json:"id"`
+					Name  string          `json:"name"`
+					Input json.RawMessage `json:"input"`
+				}
+				if err := json.Unmarshal(p, &tu); err != nil {
+					return nil, fmt.Errorf("tool_use 块解析失败: %w", err)
+				}
+				args := strings.TrimSpace(string(tu.Input))
+				if args == "" || args == "null" {
+					args = "{}"
+				}
+				calls = append(calls, ToolCallMsg{
+					ID: tu.ID, Type: "function",
+					Function: ToolCallFunction{Name: tu.Name, Arguments: args},
+				})
+			case "tool_result":
+				var tr struct {
+					ToolUseID string          `json:"tool_use_id"`
+					Content   json.RawMessage `json:"content"`
+					IsError   bool            `json:"is_error"`
+				}
+				if err := json.Unmarshal(p, &tr); err != nil {
+					return nil, fmt.Errorf("tool_result 块解析失败: %w", err)
+				}
+				body := anthropicText(tr.Content)
+				if tr.IsError {
+					body = "（工具报错）" + body
+				}
+				results = append(results, ChatMessage{
+					Role: "tool", ToolCallID: tr.ToolUseID, Content: mustJSON(body),
+				})
+			case "document":
+				return nil, errDocumentUnsupported
+			default:
+				keep = append(keep, p)
+			}
+		}
+		// 有正文/图片就保留一条消息；只有工具调用时也要保留（拍平时要渲染调用）。
+		if len(keep) > 0 || len(calls) > 0 {
+			content, err := anthropicContentRaw(mustJSONParts(keep))
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, ChatMessage{Role: m.Role, Content: content, ToolCalls: calls})
+		}
+		out = append(out, results...)
 	}
 	return out, nil
+}
+
+// mustJSONParts 把分段数组重新编码（空数组 ⇒ 空字符串 content）。
+func mustJSONParts(parts []json.RawMessage) json.RawMessage {
+	if len(parts) == 0 {
+		return mustJSON("")
+	}
+	b, err := json.Marshal(parts)
+	if err != nil {
+		return mustJSON("")
+	}
+	return b
 }
 
 // anthropicText 解析 system 字段（字符串或分段数组）。

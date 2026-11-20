@@ -38,6 +38,7 @@
 | 🤖 **Agent 模式** | `qwen3.8-max-agent` / `qwen3.8-flash-agent` 走 `chat_type=agent_mode`：**服务端自主规划并执行工具**（bash / write_file / ask_user），一次请求内跑完 `think → tool_call → think → answer` 整个循环。实测一句「写 hello.py 并运行」= 4 轮工具、**自主纠错**（`cd /home/user` 失败后自己 `pwd`+`find` 找到真实沙箱路径）、11 秒出结果。工具轨迹记进请求流水（`tools` 字段）。⚠️ 需要澄清时上游抛 `ask_user` 交互工具，单轮 API 无法回答；产物文件不随响应下发（上游只给文件名列表） |
 | ⚡ **流式 + 非流式** | 出站恒 `stream:true`，非流式由本地聚合（只有一条上游分支，行为可预测）；`stream_options.include_usage` 支持 |
 | 🤝 **三协议前门** | `POST /v1/chat/completions`（OpenAI）· `POST /v1/messages`（Anthropic Messages，Claude Code 可接）· `POST /v1/responses`（Responses 形态） |
+| 🛠️ **工具调用（模拟）** | 三个前门都认 `tools` / `tool_choice`。上游没有函数调用通道，网关把 schema 渲染成系统级协议、把模型输出的 JSON 解析回 `tool_calls`（Anthropic 侧是 `tool_use` 块，Responses 侧是 `function_call` 项）。**多轮回传也通**：`assistant.tool_calls` + `role=tool` / `tool_use`+`tool_result` / `function_call`+`function_call_output` 都会被渲染进 prompt。⚠️ 是协议适配不是原生能力：模型不守约定时退回纯文本，**绝不伪造调用** |
 | 🖼️ **图片输入（多模态）** | chat 的 content 段支持图片：URL / data URI / 裸 base64，`image_url` / `input_image` / Anthropic `image` 三种写法全收；走 `getstsToken` → OSS 上传 → `files[]`（`file_class=vision`），上传与提交**同账号** |
 | 🎨 **图片生成/编辑** | `POST /v1/images/generations`（文生图 + **图生图**）与 `POST /v1/images/edits`（multipart 前门）。字段集对齐 image-adapter 规范；`image` 支持 URL / data URI / 裸 base64，**参考图自动走 `getstsToken` → OSS V4 签名 PUT 上传** |
 | 🎬 **视频生成** | **火山方舟原生协议**：`POST/GET/DELETE /api/v3/contents/generations/tasks`。创建只回 `id`、六态、`content.video_url`、幂等、回调、任务落盘。支持 720P/1080P × 5/10/15s × 6 档比例、文生 / 首帧 / 首尾帧 / 多参考图 |
@@ -492,8 +493,68 @@ Claude Code / Cline 这类客户端把 Base URL 指向本服务即可。按 Anth
 
 ### `POST /v1/responses`
 
-供 Codex 之类只认 Responses 的客户端接入。只实现文本输出；`function_call` 等工具项
-**明确 400**（上游没有函数调用通道，不假装支持）。
+供 Codex 之类只认 Responses 的客户端接入。文本与客户端函数调用都支持：`tools` 走与
+chat 同一套翻译，产出 `function_call` 输出项；`function_call` / `function_call_output`
+回传项会渲染进 prompt（见「工具调用」一节）。内置检索（`web_search` 等）仍不支持。
+
+### 工具调用（`tools`）怎么走
+
+上游没有函数调用通道，所以这一层是**协议翻译**：把客户端工具变成一段系统级约定，
+再把模型输出的 JSON 解析回客户端能执行的结构。
+
+进（请求）：
+
+```
+POST /v1/chat/completions
+{
+  "model": "qwen3.8-omni-flash",
+  "messages": [{"role": "user", "content": "北京天气如何？"}],
+  "tools": [{"type": "function", "function": {
+    "name": "get_weather",
+    "description": "查询指定城市的实时天气",
+    "parameters": {"type": "object", "properties": {"city": {"type": "string"}}, "required": ["city"]}
+  }}],
+  "tool_choice": "auto"          // auto / none / required / {"type":"function","function":{"name":"…"}}
+}
+```
+
+网关在 prompt 末尾追加一段协议（内容形如）：
+
+```
+【工具调用协议 · 由网关注入，优先于其它指令】
+可用工具：
+1. get_weather — 查询指定城市的实时天气
+   参数 Schema：{"properties":{"city":{"type":"string"}},"required":["city"],"type":"object"}
+输出规则（严格遵守，违反会导致客户端解析失败）：
+- 需要工具结果才能回答时：整条回复只输出一个 JSON 对象（可用 json 代码块包裹）
+  {"tool_calls":[{"name":"工具名","arguments":{参数对象}}]}
+- 不需要工具时：直接用自然语言回答，不要输出上述 JSON
+```
+
+出（响应，三个前门各按自己的协议回写）：
+
+| 前门 | 工具调用的形态 | 收尾标记 |
+|---|---|---|
+| `/v1/chat/completions` | `message.tool_calls[]`（流式是 `delta.tool_calls[]`，按 `index` 累积） | `finish_reason: "tool_calls"` |
+| `/v1/messages` | `content[]` 里 `type:"tool_use"`（流式 `input_json_delta`） | `stop_reason: "tool_use"` |
+| `/v1/responses` | `output[]` 里 `type:"function_call"`（流式三个事件：added / arguments.delta / arguments.done） | `status: "completed"` |
+
+多轮回传：客户端第二轮带上 `assistant.tool_calls` + `role:"tool"`（Anthropic 是
+`tool_use` + `tool_result`，Responses 是 `function_call` + `function_call_output`），
+网关把它们渲染成「\n[调用工具] get_weather({"city":"北京"})\n工具结果：get_weather → {…}」，
+并按 `tool_call_id` 把结果与调用配对（所以结果不会串到别的工具上）。
+
+边界（明确写在这里，避免误判）：
+
+| 情况 | 行为 |
+|---|---|
+| 模型不按协议输出（先寒暄再给 JSON） | 整段按纯文本返回，`finish_reason=stop`——宁可让客户端看到 JSON 文本，也不伪造调用 |
+| 编造的工具名（不在本轮 `tools` 里） | 同上，解析直接判失败（否则客户端会去执行一个不存在的函数） |
+| `arguments` 不是 JSON 对象 | 同上（避免把一个坏参数交给客户端执行器） |
+| `tool_choice: "none"` | 协议块不注入，本轮按普通对话回答（同时打警告头） |
+| 服务端 `tool_calls.enabled=false` | 忽略 `tools`，按普通对话回答，并打警告头说明未生效 |
+| 模型是 `*-agent` 且带 `tools` | 降级到底座普通模型。实测 `qwen3.8-flash-agent` 收到 `get_weather` 会回「我没有这个工具」，然后改用**自带联网搜索**代偿——客户端工具永远不触发，却拿到一个看似完成的结果（比报错更难查） |
+| 单轮工具数 / schema 体积 | 上限 64 个 / 64KB，超了 400（`param=tools`）——它要整段进 prompt，不是免费字段 |
 
 ### 错误语义（客户端看到什么）
 
@@ -855,6 +916,8 @@ internal/reqlog/     请求流水（环形缓冲 + stdout 一行）
 | **文生图 b64** `response_format:"b64_json"` | ✅ 71.4s，7.5MB base64（含 CDN 就绪重试，见下） |
 | **文生视频** `POST /api/v3/contents/generations/tasks` | ✅ 2.7s 拿到 `tsk_…`（回包只有 `id`） |
 | **视频轮询 + 产物** | ✅ 约 15 分钟 `queued → in_progress → completed`，产物 `cdn.qwenlm.ai/.../t2v/….mp4`，1.7MB 可下 |
+| **工具调用（协议遵循）** | ✅ 线上实测（2026-11-20，prompt 为网关真实渲染文本）：单工具 / 双工具 / 不需要工具 / 工具结果续答 共 4 种场景 **4/4 遵守**——需要时输出纯 JSON（含 ```json 围栏），不需要时正常作答，喂回工具结果后直接用自然语言回答、不再重复调用 |
+| **工具调用（网关转换）** | ✅ 单测覆盖三前门：chat `tool_calls` + `finish_reason=tool_calls`、Anthropic `tool_use` + `stop_reason=tool_use`、Responses `function_call`；流式与非流式同判定（`toolcall.LooksLikePayload`） |
 
 ## 视频按积分计费（余额是唯一真口径）
 
@@ -1033,7 +1096,15 @@ QWEN2API_STORAGE_ACCESS_KEY=... QWEN2API_STORAGE_SECRET_KEY=...
   本仓已能解析 `image_gen` 系；其它 phase 会**记日志**（不再静默丢弃），但尚未翻译成结构化产物。
 - **视频任务映射已落盘**：`data/videos.json`，保留 8 天（上游任务 ID 活 7 天）。
   早前只存内存 2h，重启即丢客户端手里的 id —— 那是契约破坏，已修。
-- **工具调用未实现**：上游网页端没有函数调用通道，网关不伪造 `tool_calls`。
+- **工具调用是模拟的**：上游网页端没有函数调用通道。网关的做法是把 `tools` 渲染成系统级
+  协议（"需要工具时整条回复只输出一个 JSON"），再把输出解析成 `tool_calls`。所以：
+  ① 它是**协议适配**，不是原生 function calling——模型理论上可以不遵守；
+  ② 解析不通过（编造工具名、坏 JSON、空数组）一律**退回纯文本**，绝不伪造调用；
+  ③ 流式路径要求模型「回复以 `{` 或代码块开头」，否则同样的输出只在非流式下被识别
+  （协议里已明确要求，实测 5/5 遵守）；
+  ④ 带 `tools` 时**强制发全量 prompt**（协议块必须每轮可见，增量会让第二轮丢协议），
+  且 agent 模型会降级到底座普通模型（实测它会用自己的联网搜索绕开客户端工具）；
+  ⑤ 每轮都会带 `X-Qwen2API-Warnings: 工具调用由网关模拟…`。
 - **无排队**：容量不足直接 429（这是同步链路，排队只会让客户端以为卡死）。
 - **多轮靠拍平**：网关无状态、每请求新建会话，历史被拼进单条 prompt。省 token 的
   「复用 chat_id + parent 链」是后续优化项，当前不做（串味风险 > 那一次上游调用）。

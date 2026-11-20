@@ -463,10 +463,22 @@ type Config struct {
 	// 与 video.aliases 的区别：那个映射到**内核**，这个映射到**上游模型 id**。
 	ModelAliases map[string]string `json:"model_aliases,omitempty"`
 
-	Upstream Upstream  `json:"upstream"`
-	Pool     Pool      `json:"pool"`
-	Panel    Panel     `json:"panel"`
-	Accounts []Account `json:"accounts"`
+	Upstream  Upstream  `json:"upstream"`
+	Pool      Pool      `json:"pool"`
+	Panel     Panel     `json:"panel"`
+	ToolCalls ToolCalls `json:"tool_calls"`
+	Accounts  []Account `json:"accounts"`
+}
+
+// ToolCalls 客户端工具调用（OpenAI function calling）模拟。
+//
+// 上游网页端没有函数调用通道，网关的实现方式是：把 tools 渲染成一段系统级
+// 协议拼进 prompt，模型需要工具时"只输出一个 JSON"，网关再解析成 tool_calls。
+// 因此存在**模型不遵守协议**的可能 —— 解析不通过时一律退回纯文本（绝不伪造
+// 调用），并在 X-Qwen2API-Warnings 里说明本轮走的是模拟通路。
+type ToolCalls struct {
+	// Enabled 是否启用（默认 true）。false = 忽略 tools，按普通对话回答。
+	Enabled *bool `json:"enabled,omitempty"`
 }
 
 // Panel 管理面板的登录.
@@ -848,6 +860,15 @@ func (c Config) RouteModel(model string) string {
 // ReasoningEnabled 是否透出思考内容（默认 true）。
 func (c Config) ReasoningEnabled() bool {
 	return c.ExposeReasoning == nil || *c.ExposeReasoning
+}
+
+// ToolCallEnabled 是否启用客户端工具调用模拟（默认 true）。
+//
+// 🔴 这不是"上游支持函数调用"，而是网关把 tools 翻译成 prompt 协议、
+// 再把模型的 JSON 回复解析回 tool_calls（internal/toolcall）。
+// 关掉之后带 tools 的请求仍会正常返回，只是按普通对话作答并打警告头。
+func (c Config) ToolCallEnabled() bool {
+	return c.ToolCalls.Enabled == nil || *c.ToolCalls.Enabled
 }
 
 // DialogStickyEnabled 是否让 Agent 复用上游会话（默认 true）。

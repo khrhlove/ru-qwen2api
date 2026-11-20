@@ -14,6 +14,7 @@ import (
 
 	"github.com/yuanjie-ai/qwen2api/internal/pool"
 	"github.com/yuanjie-ai/qwen2api/internal/reqlog"
+	"github.com/yuanjie-ai/qwen2api/internal/toolcall"
 	"github.com/yuanjie-ai/qwen2api/internal/upstream"
 )
 
@@ -139,7 +140,36 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	flat, err := Flatten(req.Messages)
+	// 工具调用：上游没有函数调用通道，这里把 tools 翻译成 prompt 协议
+	// （见 internal/toolcall）。关闭开关时按"未生效"处理并显式告警，
+	// 绝不静默丢弃 —— 客户端会以为是模型不支持工具。
+	tools := req.Tools
+	var toolNote string
+	if len(tools) > 0 {
+		if !s.conf().ToolCallEnabled() {
+			tools = nil
+			toolNote = "服务端已关闭工具调用模拟（tool_calls.enabled=false），本轮 tools 未生效"
+		} else if err := toolcall.Validate(tools); err != nil {
+			entry.Status = http.StatusBadRequest
+			entry.Error = "tools: " + err.Error()
+			s.addReq(&entry)
+			writeErrorParam(w, http.StatusBadRequest, "invalid_request_error", err.Error(), "tools")
+			return
+		}
+	}
+
+	// 协议块作为**最后一条 system** 注入：Flatten 会把所有 system 拼在前面，
+	// 放在末尾能让"输出规则"离当前问题最近（指令遵循率实测更高）。
+	msgs := req.Messages
+	if proto := toolcall.Prompt(tools, req.ToolChoiceMode()); proto != "" {
+		msgs = make([]ChatMessage, 0, len(req.Messages)+1)
+		msgs = append(msgs, req.Messages...)
+		msgs = append(msgs, ChatMessage{Role: "system", Content: mustJSON(proto)})
+	} else if req.ToolChoiceMode().Mode == "none" && len(tools) > 0 {
+		toolNote = joinDegraded(toolNote, "tool_choice=none：本轮不注入工具协议")
+	}
+
+	flat, err := Flatten(msgs)
 	if err != nil {
 		entry.Status = http.StatusBadRequest
 		entry.Error = err.Error()
@@ -216,6 +246,20 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	// 上游只认 qwen3.8-max（§10.2）。model 变量保持原名，响应体里的 model
 	// 字段才不会变脸；upModel 只用于提交。
 	upModel, spec, isAgent := s.agentSpecFor(routeModel)
+	// Agent 模式自带一套服务端工具（bash / write_file / 联网搜索），与客户端
+	// tools 混用会让模型在两套工具之间摇摆。2026-11-20 线上实测：给
+	// `qwen3.8-flash-agent` 传 get_weather，它直接回"我没有这个工具"，然后
+	// **改用自带的联网搜索代偿** —— 客户端的工具永远不会被调用，但模型照样
+	// 给出一个看起来完成的结果（比报错更难查）。
+	// 有 tools 时降级到同底座普通模型：工具语义可控，代价是丢掉 agent 的
+	// 自主规划（客户端本来就要自己调度工具，那部分不需要上游代劳）。
+	if isAgent && len(tools) > 0 {
+		spec = upstream.TextSpec()
+		isAgent = false
+		const note = "agent 模型 + tools ⇒ 已降级为底座普通模型（避免两套工具打架）"
+		toolNote = joinDegraded(toolNote, note)
+		entry.Degraded = joinDegraded(entry.Degraded, note)
+	}
 	spec.Files = files
 	spec.ImageRefs = imgRefs
 	// 对话粘性对**所有文本模型**生效（2026-11-12 扩围）。
@@ -253,6 +297,21 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		s.dialogs.drop(dlgKey)
 		ps.Delta = ""
 	}
+	// 工具协议每轮都必须随 prompt 下发（模型靠它知道有哪些工具、怎么输出）。
+	// 增量只发最后一句用户输入 ⇒ 协议块凭空消失 ⇒ 第二轮开始模型不再调用工具。
+	if len(tools) > 0 {
+		ps.Delta = ""
+	}
+	// 工具模拟是"尽力而为"的能力，必须让调用方知道当前走的是这条通路。
+	if len(tools) > 0 {
+		warns := []string{"工具调用由网关模拟（上游无函数调用通道）：需要工具时模型应只输出 JSON，解析失败会退回纯文本"}
+		if toolNote != "" {
+			warns = append(warns, toolNote)
+		}
+		setMediaWarnings(w, warns)
+	} else if toolNote != "" {
+		setMediaWarnings(w, []string{toolNote})
+	}
 	actx := r.Context()
 	if force := strings.TrimSpace(r.Header.Get("X-Force-Account")); force != "" &&
 		os.Getenv("DEBUG_FORCE_ACCOUNT") == "1" {
@@ -288,9 +347,9 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	entry.Account = sd.acct.Name
 
 	if req.Stream {
-		s.serveChatStream(w, r, sd, req, model, &entry, start)
+		s.serveChatStream(w, r, sd, req, tools, model, &entry, start)
 	} else {
-		s.serveChatOnce(w, r, sd, req, model, &entry, start)
+		s.serveChatOnce(w, r, sd, req, tools, model, &entry, start)
 	}
 	s.pool.MarkOK(sd.acct)
 }
@@ -877,7 +936,7 @@ func (s *Server) noteFailure(acct *pool.Account, err error) {
 // ---------- 流式 ----------
 
 func (s *Server) serveChatStream(w http.ResponseWriter, r *http.Request, sd *opened,
-	req ChatRequest, model string, entry *reqlog.Entry, start time.Time) {
+	req ChatRequest, tools []toolcall.Tool, model string, entry *reqlog.Entry, start time.Time) {
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -912,8 +971,21 @@ func (s *Server) serveChatStream(w http.ResponseWriter, r *http.Request, sd *ope
 		firstByte    bool
 		sawUnknown   bool
 		streamErr    error
-		tools        strings.Builder
+		trace        strings.Builder
+		// 工具模拟：allowed 用于拒绝编造的工具名；hold 期间文本先攒着，
+		// 判定为普通文本后转直通（见 toolcall.Decide）。
+		allowed = toolcall.Allowed(tools)
+		hold    = len(tools) > 0
+		pending strings.Builder
 	)
+	// emitContent 只在"确定是正文"之后调用。
+	emitContent := func(text string) {
+		chars += len([]rune(text))
+		s.writeChunk(w, flusher, ChatChunk{
+			ID: id, Object: "chat.completion.chunk", Created: created, Model: model,
+			Choices: []StreamChoice{{Index: 0, Delta: Delta{Content: text}}},
+		})
+	}
 	for {
 		ev, more, err := sd.stream.Next()
 		if err != nil {
@@ -936,7 +1008,7 @@ func (s *Server) serveChatStream(w http.ResponseWriter, r *http.Request, sd *ope
 			log.Printf("[qwen2api] 上游出现未处理的 phase=%q（产物可能被丢弃，见 docs/UPSTREAM.md §4）", ev.UnknownPhase)
 		}
 		if ev.ToolArgs != "" {
-			appendToolTrace(&tools, ev)
+			appendToolTrace(&trace, ev)
 		}
 		if ev.Reasoning != "" && s.conf().ReasoningEnabled() {
 			if !firstByte {
@@ -956,15 +1028,40 @@ func (s *Server) serveChatStream(w http.ResponseWriter, r *http.Request, sd *ope
 				entry.FirstTextMS = time.Since(sd.submitAt).Milliseconds()
 				firstByte = true
 			}
-			chars += len([]rune(ev.Text))
-			s.writeChunk(w, flusher, ChatChunk{
-				ID: id, Object: "chat.completion.chunk", Created: created, Model: model,
-				Choices: []StreamChoice{{Index: 0, Delta: Delta{Content: ev.Text}}},
-			})
+			if !hold {
+				emitContent(ev.Text)
+			} else {
+				// 还没判定形态：先攒。首字符不是 { / ``` 就说明是普通回答，
+				// 把攒下的刷出去并转直通（延后只有几个字符，不影响流式体验）。
+				pending.WriteString(ev.Text)
+				h, _ := toolcall.Decide(pending.String())
+				if !h {
+					hold = false
+					emitContent(pending.String())
+					pending.Reset()
+				}
+			}
 		}
 		if ev.Done {
 			break
 		}
+	}
+
+	// 工具解析：攒下来的整段要么是 tool_calls 载荷，要么就是普通文本。
+	var (
+		calls    []toolcall.Call
+		callText string
+	)
+	if pending.Len() > 0 {
+		got, rest, ok := toolcall.Parse(pending.String(), allowed)
+		if ok {
+			calls, callText = got, rest
+		} else {
+			// 形态像载荷但解析不通过（编造工具名 / 坏 JSON / 空数组）：
+			// 按普通文本原样下发。绝不在这里伪造一个模型没发出的调用。
+			emitContent(pending.String())
+		}
+		pending.Reset()
 	}
 
 	// 收尾：流内错误要响亮地下发（不能静默当正常结束）。
@@ -978,7 +1075,7 @@ func (s *Server) serveChatStream(w http.ResponseWriter, r *http.Request, sd *ope
 			typ, msg := clientError(http.StatusBadGateway, errTypeFor(streamErr), streamErr.Error())
 			s.writeSSE(w, flusher, ErrorBody{Error: ErrorDetail{Message: msg, Type: typ}})
 		}
-	} else if chars == 0 && reasoningLen == 0 {
+	} else if chars == 0 && reasoningLen == 0 && len(calls) == 0 {
 		// 一字未出（含思考）：形态不符，必须让客户端知道，而不是回一个空回复。
 		entry.Error = upstream.ErrNoText.Error()
 		s.dialogs.drop(sd.dialogKey)
@@ -991,6 +1088,29 @@ func (s *Server) serveChatStream(w http.ResponseWriter, r *http.Request, sd *ope
 
 	// 正常收尾（或错误后也发 finish，保证客户端能闭合）。
 	stop := "stop"
+	if len(calls) > 0 {
+		stop = "tool_calls"
+		if callText != "" {
+			emitContent(callText)
+		}
+		// 两帧一条调用：先 id+name，再 arguments。客户端按 index 累积，
+		// 这也是 OpenAI 官方流的形态（name 只出现一次，arguments 分片）。
+		for i, c := range calls {
+			s.writeChunk(w, flusher, ChatChunk{
+				ID: id, Object: "chat.completion.chunk", Created: created, Model: model,
+				Choices: []StreamChoice{{Index: 0, Delta: Delta{ToolCalls: []StreamToolCall{{
+					Index: i, ID: c.ID, Type: "function",
+					Function: &StreamFunction{Name: c.Name},
+				}}}}},
+			})
+			s.writeChunk(w, flusher, ChatChunk{
+				ID: id, Object: "chat.completion.chunk", Created: created, Model: model,
+				Choices: []StreamChoice{{Index: 0, Delta: Delta{ToolCalls: []StreamToolCall{{
+					Index: i, Function: &StreamFunction{Arguments: c.Arguments},
+				}}}}},
+			})
+		}
+	}
 	s.writeChunk(w, flusher, ChatChunk{
 		ID: id, Object: "chat.completion.chunk", Created: created, Model: model,
 		Choices: []StreamChoice{{Index: 0, Delta: Delta{}, FinishReason: &stop}},
@@ -1009,7 +1129,7 @@ func (s *Server) serveChatStream(w http.ResponseWriter, r *http.Request, sd *ope
 	flusher.Flush()
 
 	entry.Chars = chars
-	entry.Tools = tools.String()
+	entry.Tools = trace.String()
 	applyUsage(entry, usage, usageOut, cacheEst)
 	// 只有成功收尾才记录本轮形态：下一轮靠它判断"是不是纯追加"。
 	// 失败路径不记 —— 那时上游会话里可能缺这一轮的完整历史，记了会让
@@ -1022,14 +1142,14 @@ func (s *Server) serveChatStream(w http.ResponseWriter, r *http.Request, sd *ope
 // ---------- 非流式 ----------
 
 func (s *Server) serveChatOnce(w http.ResponseWriter, r *http.Request, sd *opened,
-	req ChatRequest, model string, entry *reqlog.Entry, start time.Time) {
+	req ChatRequest, tools []toolcall.Tool, model string, entry *reqlog.Entry, start time.Time) {
 
 	var (
 		sb         strings.Builder
 		reasoning  strings.Builder
 		usage      *upstream.Usage
 		sawUnknown bool
-		tools      strings.Builder
+		trace      strings.Builder
 	)
 	for {
 		ev, more, err := sd.stream.Next()
@@ -1059,7 +1179,7 @@ func (s *Server) serveChatOnce(w http.ResponseWriter, r *http.Request, sd *opene
 			log.Printf("[qwen2api] 上游出现未处理的 phase=%q（产物可能被丢弃，见 docs/UPSTREAM.md §4）", ev.UnknownPhase)
 		}
 		if ev.ToolArgs != "" {
-			appendToolTrace(&tools, ev)
+			appendToolTrace(&trace, ev)
 		}
 		if ev.Reasoning != "" && s.conf().ReasoningEnabled() {
 			reasoning.WriteString(ev.Reasoning)
@@ -1084,6 +1204,21 @@ func (s *Server) serveChatOnce(w http.ResponseWriter, r *http.Request, sd *opene
 	}
 
 	stop := "stop"
+	msg := &ResponseMessage{Role: "assistant", Content: content, ReasoningContent: reasoning.String()}
+	// 工具调用：只有"回复以 { 或 ``` 开头"才尝试解析，与流式同一判定
+	// （见 toolcall.LooksLikePayload）。解析不通过 = 普通文本，绝不伪造调用。
+	if len(tools) > 0 {
+		if calls, rest, ok := toolcall.Parse(content, toolcall.Allowed(tools)); ok {
+			stop = "tool_calls"
+			msg.Content = rest
+			for _, c := range calls {
+				msg.ToolCalls = append(msg.ToolCalls, ResponseToolCall{
+					ID: c.ID, Type: "function",
+					Function: ResponseFunction{Name: c.Name, Arguments: c.Arguments},
+				})
+			}
+		}
+	}
 	usageOut, cacheEst := sd.usageFor(usage)
 	resp := ChatResponse{
 		ID:      "chatcmpl-" + strings.ReplaceAll(upstream.UUID(), "-", "")[:24],
@@ -1092,7 +1227,7 @@ func (s *Server) serveChatOnce(w http.ResponseWriter, r *http.Request, sd *opene
 		Model:   model,
 		Choices: []Choice{{
 			Index:        0,
-			Message:      &ResponseMessage{Role: "assistant", Content: content, ReasoningContent: reasoning.String()},
+			Message:      msg,
 			FinishReason: &stop,
 		}},
 		Usage: usageOut,
@@ -1100,8 +1235,9 @@ func (s *Server) serveChatOnce(w http.ResponseWriter, r *http.Request, sd *opene
 	writeJSON(w, http.StatusOK, resp)
 
 	entry.Status = http.StatusOK
-	entry.Tools = tools.String()
-	entry.Chars = len([]rune(content))
+	entry.Tools = trace.String()
+	// 只统计下发给客户端的正文：tool_calls 不算字符数（与流式口径一致）。
+	entry.Chars = len([]rune(msg.Content))
 	entry.FirstByteMS = time.Since(start).Milliseconds()
 	applyUsage(entry, usage, usageOut, cacheEst)
 	sd.rememberShape(req.Messages)
