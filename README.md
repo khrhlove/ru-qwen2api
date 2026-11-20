@@ -566,6 +566,7 @@ POST /v1/chat/completions
 | 无可用账号（全冷却/失效） | **503** | `service_unavailable` | — | `no available upstream account, please retry later` |
 | 上游凭据坏了（网关侧） | 502 | `upstream_error` | — | `upstream authentication failed` |
 | 额度/限流 | 429 | `insufficient_quota` / `rate_limit_error` | — | 具体到"哪个额度、差多少"（中文） |
+| 上游风控（`RGV587` / WAF 页） | **429** + `Retry-After: 30` | `rate_limit_error` | — | `upstream rate limited, please retry later` |
 | 参数写错 | 4xx | `invalid_request_error` | 见下 | 具体到字段（中文） |
 
 > 📌 `error.code` 用**方舟词表**，与 `error.type` 分工不同：
@@ -583,6 +584,10 @@ POST /v1/chat/completions
 >
 > chat / images / messages 的参数错目前只给 `type`（OpenAI 的 `code` 本就是可空字段），
 > 只有 401 是双方共用的 —— 它必须带码，否则方舟客户端按 `code` 分支时拿到空值。
+
+> 风控为什么是 429 而不是 502：502 会被客户端当成"网关坏了"立刻重试，把风控窗撑得更长
+> （2026-11-20 线上：23 条失败全是被重试放大的 `RGV587`）。429 + `Retry-After` 才是
+> 能触发 SDK / 中间网关自动退避的信号。
 
 **5xx 一律是短英文 + 稳定 type**（客户端/SDK 要的是机器可读，不是排查指南）；
 "额度将尽 or 上游抖动 / 建议换号"这类判断只进**请求流水与容器日志**，

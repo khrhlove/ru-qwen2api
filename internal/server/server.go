@@ -499,6 +499,10 @@ func retryAfter(w http.ResponseWriter, code int) {
 	switch code {
 	case http.StatusGatewayTimeout, http.StatusServiceUnavailable:
 		w.Header().Set("Retry-After", "5")
+	case http.StatusTooManyRequests:
+		// 风控窗实测 15~17 分钟（2026-11-20 两次部署复现）。给 30 秒：
+		// 足够让客户端退避，又不至于让一次抖动被当成"停服半小时"。
+		w.Header().Set("Retry-After", "30")
 	}
 }
 

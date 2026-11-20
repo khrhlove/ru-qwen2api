@@ -407,3 +407,28 @@ func TestClientError429Split(t *testing.T) {
 		t.Fatalf("额度 429 应保留中文原文，得到 (%s, %q)", typ, msg)
 	}
 }
+
+// TestRiskMapsTo429 风控（RGV587）必须映射成 429 + Retry-After。
+//
+// 之前落到 502：客户端把它当"网关坏了"立刻重试，反而把风控窗撑得更长
+// （2026-11-20 线上：23 条全是被重试放大的 RGV587）。429 才能让 SDK / 中间网关退避。
+func TestRiskMapsTo429(t *testing.T) {
+	err := upstream.NewErr(upstream.KindRisk, "completions", 200, "RGV587", "上游 x5sec 风控", true)
+	if got := httpStatusFor(err); got != http.StatusTooManyRequests {
+		t.Fatalf("风控应映射 429，得到 %d", got)
+	}
+	if typ := errTypeFor(err); typ != "rate_limit_error" {
+		t.Fatalf("风控 error.type 应为 rate_limit_error，得到 %q", typ)
+	}
+	// 客户端文案不该泄露上游原文（"x5sec"对调用方没有意义）
+	_, msg := clientError(httpStatusFor(err), errTypeFor(err), err.Error())
+	if strings.Contains(msg, "x5sec") {
+		t.Fatalf("客户端文案泄露了上游细节: %q", msg)
+	}
+	// Retry-After 必须给（否则"退避"无从谈起）
+	rec := httptest.NewRecorder()
+	writeError(rec, http.StatusTooManyRequests, "rate_limit_error", err.Error())
+	if got := rec.Header().Get("Retry-After"); got == "" {
+		t.Fatal("429 缺 Retry-After")
+	}
+}

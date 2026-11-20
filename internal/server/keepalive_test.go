@@ -136,3 +136,25 @@ func TestCapReadyToHot(t *testing.T) {
 		t.Fatalf("热点集为空时应全部剔除，得到 %v", got)
 	}
 }
+
+// TestCappedBatch 启动斜坡的算法边界。
+//
+// 为什么要有：重启后整池 token 过期，首轮会按满批打 auth 域 + chats/new，
+// 2026-11-20 两次部署都在启动后 1~4 分钟撞上 RGV587 风控窗。首轮限量是缓解手段。
+func TestCappedBatch(t *testing.T) {
+	cases := []struct{ batch, cap, want int }{
+		{20, 0, 20},  // 不限
+		{20, 8, 8},   // 压下
+		{4, 8, 4},    // cap 比批量大：不动
+		{20, -1, 20}, // 负值等同不限
+		{0, 8, 0},    // 空批量
+	}
+	for _, c := range cases {
+		if got := cappedBatch(c.batch, c.cap); got != c.want {
+			t.Errorf("cappedBatch(%d,%d)=%d, want %d", c.batch, c.cap, got, c.want)
+		}
+	}
+	if startupWarmBatch <= 0 || startupWarmBatch > 16 {
+		t.Errorf("startupWarmBatch=%d 不合理（应 1~16，太大就不算斜坡了）", startupWarmBatch)
+	}
+}

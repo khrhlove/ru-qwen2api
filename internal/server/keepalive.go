@@ -48,6 +48,14 @@ const (
 	refreshRetryBackoff = 5 * time.Minute
 	// refreshLockShards 换票互斥的分片数（见 lockRefresh）。
 	refreshLockShards = 64
+	// startupWarmBatch 启动首轮的续期批量上限（斜坡）。
+	//
+	// 为什么要有：重启后整池 token 都过期，首轮 warmOnce 会按满批（默认 20~48 个）
+	// 连打 auth 域，紧接着 prewarmChats 再打一批 chats/new —— 这些请求集中在池子
+	// 那几个出口 IP 上。2026-11-20 两次线上部署都在启动后 1~4 分钟出现
+	// `RGV587 / x5sec` 风控窗（详见 .workbuddy/memory）。首轮压到 8 个、
+	// 且不预建会话，把"重启即突发"抹平；steady state 不受影响。
+	startupWarmBatch = 8
 )
 
 // keepaliveTick 预热轮询间隔（配置可热更，改完下一轮生效）。
@@ -87,7 +95,7 @@ func (s *Server) KeepAlive(ctx context.Context) {
 	// 不复用"启动即轮换"：重启后整池都过期，第一轮该按排序把正在用的号热起来。
 	lastRotate := time.Now()
 
-	runOne := func() {
+	runOne := func(first bool) {
 		peak := int(s.inflightPeak.Swap(0))
 		// 先推进窗口：本轮 warmOnce 就该续新窗口里的号（换批是重叠式的，
 		// 旧窗口的票不会立刻失效，见 rotateHotPool）。
@@ -97,8 +105,13 @@ func (s *Server) KeepAlive(ctx context.Context) {
 		// 每轮一次（缓存 10 分钟，绝大多数轮次是空转）。
 		_ = s.models.List(ctx)
 		changed := s.adoptOnce(ctx, peak)
-		changed = s.warmOnce(ctx, peak) || changed
-		s.prewarmChats(ctx, peak)
+		if first {
+			// 斜坡：首轮限量续期、不预建会话（见 startupWarmBatch 的注释）。
+			changed = s.warmOnceCapped(ctx, peak, startupWarmBatch) || changed
+		} else {
+			changed = s.warmOnce(ctx, peak) || changed
+			s.prewarmChats(ctx, peak)
+		}
 		changed = s.maintainRefresh(ctx) || changed
 		saveIfDue(changed)
 		if time.Since(lastCap) >= capTick {
@@ -107,7 +120,7 @@ func (s *Server) KeepAlive(ctx context.Context) {
 		}
 	}
 
-	runOne()
+	runOne(true)
 	for {
 		select {
 		case <-ctx.Done():
@@ -117,7 +130,7 @@ func (s *Server) KeepAlive(ctx context.Context) {
 			}
 			return
 		case <-time.After(s.keepaliveTick()):
-			runOne()
+			runOne(false)
 		}
 	}
 }
@@ -392,9 +405,22 @@ func (s *Server) chatTarget(peak, tokenTarget int) int {
 
 // warmOnce 跑一轮 access token 续期。
 func (s *Server) warmOnce(ctx context.Context, peak int) bool {
+	return s.warmOnceCapped(ctx, peak, 0)
+}
+
+// cappedBatch 把批量压到 cap（cap<=0 = 不限制）。启动斜坡的唯一算法。
+func cappedBatch(batch, cap int) int {
+	if cap > 0 && batch > cap {
+		return cap
+	}
+	return batch
+}
+
+// warmOnceCapped 预热一轮；cap>0 时把本轮批量压到 cap（启动斜坡用）。
+func (s *Server) warmOnceCapped(ctx context.Context, peak int, cap int) bool {
 	ka := s.conf().Pool.Keepalive.Effective()
 	target := s.warmTarget(peak)
-	batch := warmBatch(target, ka.BatchMax, ka.TickS)
+	batch := cappedBatch(warmBatch(target, ka.BatchMax, ka.TickS), cap)
 	window := time.Duration(ka.TokenWindowS) * time.Second
 	names := s.pool.WarmCandidates(target, window, batch)
 	// 即使候选为空也要记：否则 /stats 的 warm.target 永远停在 0（观测失真）。

@@ -1429,6 +1429,11 @@ func httpStatusFor(err error) int {
 		return http.StatusBadGateway
 	case upstream.KindQuota, upstream.KindRateLimit:
 		return http.StatusTooManyRequests
+	case upstream.KindRisk:
+		// 风控（RGV587 / WAF 页）语义是"现在别打，过会儿再来" ⇒ 429。
+		// 之前落到 502：客户端把它当"网关坏了"立刻重试，反而把风控窗撑得更长。
+		// 429 + Retry-After 才是能让 SDK / 中间网关自动退避的信号。
+		return http.StatusTooManyRequests
 	case upstream.KindBadInput:
 		return http.StatusBadRequest
 	case upstream.KindServer, upstream.KindTransport:
