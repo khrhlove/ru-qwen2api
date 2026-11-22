@@ -18,6 +18,10 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
     -trimpath -ldflags="-s -w -X main.version=${VERSION}" \
     -o /out/qwen2api ./cmd/server
 
+FROM build AS test-local
+RUN --network=none go test ./internal/config ./internal/panel ./cmd/server && \
+    go test ./internal/server -run '^(TestChatStreamEndToEnd|TestChatNonStreamAggregates|TestChatNoAccountReturns503|TestAuthRequired)$' -count=1
+
 FROM alpine:3.20
 # ffmpeg 是视频后处理（去水印）的硬依赖：上游产物右下角烧着 133x33 的 Qwen 图层，
 # 只能在像素层重绘。镜像因此从 ~20MB 涨到 ~100MB —— 这是"交付干净成片"的代价。

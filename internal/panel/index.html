@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="zh-CN" data-theme="light">
+<html lang="ru" data-theme="light">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>qwen2api · 控制台</title>
+<title>qwen2api · Панель управления</title>
 <link rel="icon" type="image/svg+xml" href="/panel/favicon.svg">
 <style>
 /* ── 设计令牌：明暗两套独立色板 ─────────────────────────────────────────
@@ -198,7 +198,7 @@ button.xs { white-space:nowrap; }
 .grid .err { font-size:11.5px; color:var(--bad); padding:9px 11px; }
 .thumbs { display:flex; gap:6px; margin-top:7px; flex-wrap:wrap; }
 .thumbs img { width:58px; height:58px; object-fit:cover; border-radius:6px; border:1px solid var(--line); }
-/* 垫图槽：序号是给模型指代用的（"第 2 张"按序号提交），所以必须显式标出来 */
+/* 垫图槽：序号是给模型指代用的（"Строка 2 张"в порядке добавления），所以必须显式标出来 */
 .refs { display:flex; gap:8px; flex-wrap:wrap; }
 .refs .ref { position:relative; width:64px; height:64px; border-radius:8px; overflow:hidden; border:1px solid var(--line); background:var(--surface-2); }
 .refs .ref img { width:100%; height:100%; object-fit:cover; display:block; }
@@ -253,105 +253,106 @@ button.xs { white-space:nowrap; }
   <nav class="nav" id="navDrawer">
     <div class="brand">
       <div class="name">qwen2api</div>
-      <div class="sub" id="navSub">控制台</div>
+      <div class="sub" id="navSub">Панель управления</div>
     </div>
     <ul>
       <li><a href="#accounts" data-view="accounts" class="on">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="5.5" r="2.6"/><path d="M2.8 13.5c.6-2.6 2.7-4 5.2-4s4.6 1.4 5.2 4"/></svg>
-        账号池</a></li>
+        Аккаунты</a></li>
       <li><a href="#usage" data-view="usage">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 13.5h12"/><path d="M4.5 13.5V8.2M8 13.5V3.5M11.5 13.5v-3"/></svg>
-        用量</a></li>
+        Статистика</a></li>
       <li><a href="#logs" data-view="logs">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 3.5h11M2.5 8h11M2.5 12.5h7"/></svg>
-        日志</a></li>
+        Журнал</a></li>
       <li><a href="#capacity" data-view="capacity">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 13.5h12M3 11l3-3 2.5 2L13 4.5"/><path d="M10 4.5h3v3"/></svg>
-        容量</a></li>
+        Лимиты</a></li>
       <li><a href="#models" data-view="models">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M8 1.8 14 5v6L8 14.2 2 11V5z"/><path d="M2 5l6 3.2L14 5M8 8.2v6"/></svg>
-        模型与调试</a></li>
+        Модели и проверка</a></li>
       <li><a href="#config" data-view="config">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.6v1.9M8 12.5v1.9M1.6 8h1.9M12.5 8h1.9M3.5 3.5l1.3 1.3M11.2 11.2l1.3 1.3M12.5 3.5l-1.3 1.3M4.8 11.2l-1.3 1.3"/></svg>
-        配置</a></li>
+        Настройки</a></li>
     </ul>
     <div class="sig">
-      <div class="row"><span class="pulse" id="navPulse"></span><span id="navState">连接中</span></div>
+      <div class="row"><span class="pulse" id="navPulse"></span><span id="navState">Подключение…</span></div>
       <div class="row" style="margin-top:5px"><span id="navVer">v-</span> · <span id="navUp">-</span></div>
-      <div class="row" style="margin-top:7px"><a href="#" id="btnLogout" hidden>退出登录</a></div>
+      <div class="row" style="margin-top:7px"><a href="#" id="btnLogout" hidden>Выйти</a></div>
     </div>
   </nav>
 
   <div class="main">
+    <p id="offlineNotice" class="warnbox" hidden>Автономный режим. Панель доступна для просмотра; вход в Qwen и отправка запросов выключены.</p>
     <div class="topbar">
-      <button class="icon ghost nav-btn" id="navBtn" aria-label="打开导航">
+      <button class="icon ghost nav-btn" id="navBtn" aria-label="Меню">
         <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 4h11M2.5 8h11M2.5 12h11"/></svg>
       </button>
-      <h2 id="ttl">账号池</h2>
+      <h2 id="ttl">Аккаунты</h2>
       <span class="sep">/</span>
       <span class="meta" id="subMeta">-</span>
       <div class="grow"></div>
-      <button class="icon ghost" id="btnTheme" title="切换明暗" aria-label="切换主题">
+      <button class="icon ghost" id="btnTheme" title="Светлая или тёмная тема" aria-label="Сменить тему">
         <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M13.2 9.6A5.6 5.6 0 0 1 6.4 2.8a5.6 5.6 0 1 0 6.8 6.8z"/></svg>
       </button>
-      <button id="btnRefresh">刷新</button>
-      <button class="primary" id="btnImport">导入账号</button>
+      <button id="btnRefresh">Обновить</button>
+      <button class="primary" id="btnImport">Добавить аккаунт</button>
     </div>
 
     <!-- ══════════ 账号池 ══════════ -->
     <section class="view" id="view-accounts">
       <div class="stats">
-        <div class="stat"><div class="v" id="sTotal">-</div><div class="k">账号总数</div></div>
-        <div class="stat good"><div class="v" id="sReady">-</div><div class="k">可用</div></div>
-        <div class="stat warn"><div class="v" id="sCooling">-</div><div class="k">冷却中</div></div>
-        <div class="stat bad"><div class="v" id="sDead">-</div><div class="k">凭据失效</div></div>
-        <div class="stat"><div class="v" id="sImgLeft">-</div><div class="k">今日可出图</div></div>
-        <div class="stat"><div class="v" id="sCredits">-</div><div class="k">积分余额合计</div></div>
-        <div class="stat"><div class="v" id="sVidLeft">-</div><div class="k">可做 720P 5s</div></div>
+        <div class="stat"><div class="v" id="sTotal">-</div><div class="k">Всего аккаунтов</div></div>
+        <div class="stat good"><div class="v" id="sReady">-</div><div class="k">Доступно</div></div>
+        <div class="stat warn"><div class="v" id="sCooling">-</div><div class="k">На паузе</div></div>
+        <div class="stat bad"><div class="v" id="sDead">-</div><div class="k">Нужен вход</div></div>
+        <div class="stat"><div class="v" id="sImgLeft">-</div><div class="k">Осталось изображений на сегодня</div></div>
+        <div class="stat"><div class="v" id="sCredits">-</div><div class="k">Всего кредитов</div></div>
+        <div class="stat"><div class="v" id="sVidLeft">-</div><div class="k">Видео 720p по 5 с</div></div>
       </div>
 
       <div class="box">
         <header>
-          <h3>账号池</h3>
+          <h3>Аккаунты</h3>
           <span class="hint" id="accNote"></span>
           <span class="grow"></span>
-          <button class="xs" id="btnRefreshCredits" title="从上游重新读取每个账号的积分余额">刷新余额</button>
+          <button class="xs" id="btnRefreshCredits" title="Запросить баланс у Qwen">Обновить баланс</button>
         </header>
         <div class="tools">
           <div class="row">
             <div class="search">
               <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="7" r="4.4"/><path d="M10.4 10.4 14 14" stroke-linecap="round"/></svg>
-              <input id="accQ" type="search" placeholder="搜索账号名 / 邮箱 / 备注" autocomplete="off" spellcheck="false">
+              <input id="accQ" type="search" placeholder="Поиск по названию, почте или заметке" autocomplete="off" spellcheck="false">
             </div>
             <div class="chips" id="accChips"></div>
-            <span class="hint" style="margin-left:2px">凭据</span>
+            <span class="hint" style="margin-left:2px">Сессия</span>
             <div class="chips" id="accTokChips"></div>
             <span class="grow"></span>
-            <label class="sel-note">排序<select id="accSort">
-              <option value="default">异常优先</option>
-              <option value="token_desc">凭据剩余 ↓</option>
-              <option value="token_asc">凭据剩余 ↑</option>
-              <option value="balance_desc">余额 ↓</option>
-              <option value="balance_asc">余额 ↑</option>
-              <option value="fails_desc">失败次数 ↓</option>
-              <option value="served_desc">已服务 ↓</option>
-              <option value="name">账号名</option>
+            <label class="sel-note">Сортировка<select id="accSort">
+              <option value="default">Сначала ошибки</option>
+              <option value="token_desc">Срок сессии ↓</option>
+              <option value="token_asc">Срок сессии ↑</option>
+              <option value="balance_desc">Баланс ↓</option>
+              <option value="balance_asc">Баланс ↑</option>
+              <option value="fails_desc">Ошибки ↓</option>
+              <option value="served_desc">Запросы ↓</option>
+              <option value="name">Название аккаунта</option>
             </select></label>
-            <label class="sel-note">每页<select id="accSize">
-              <option value="20">20</option><option value="50">50</option><option value="100">100</option><option value="0">全部</option>
+            <label class="sel-note">На странице<select id="accSize">
+              <option value="20">20</option><option value="50">50</option><option value="100">100</option><option value="0">Все</option>
             </select></label>
           </div>
           <div class="row" id="accErrRow" hidden>
             <span class="tag bad" id="accErrText"></span>
-            <button class="xs ghost" id="accErrClear">清空过滤</button>
+            <button class="xs ghost" id="accErrClear">Сбросить фильтр</button>
           </div>
         </div>
         <div class="tbl-wrap">
           <table>
             <thead><tr>
-              <th class="c-chk"><input type="checkbox" id="accChkAll" title="全选当前页" aria-label="全选当前页" style="width:auto"></th>
-              <th>账号</th><th>状态</th><th class="num">积分</th><th class="num">今日出图</th>
-              <th class="num">今日视频</th><th class="num">成功/失败</th><th class="num">在途</th><th class="num sortable" id="thTok" title="access token 剩余寿命（15 分钟一换）· 点这里按剩余寿命排序">凭据 <span class="note" id="thTokMark"></span></th><th>最近使用</th><th class="c-acts"></th>
+              <th class="c-chk"><input type="checkbox" id="accChkAll" title="Выбрать страницу" aria-label="Выбрать страницу" style="width:auto"></th>
+              <th>Аккаунт</th><th>Состояние</th><th class="num">Кредиты</th><th class="num">Изображения за день</th>
+              <th class="num">Видео за день</th><th class="num">Успех / ошибки</th><th class="num">В работе</th><th class="num sortable" id="thTok" title="Срок действия сессии. Нажмите для сортировки.">Сессия <span class="note" id="thTokMark"></span></th><th>Последний запрос</th><th class="c-acts"></th>
             </tr></thead>
             <tbody id="accBody"></tbody>
           </table>
@@ -359,9 +360,9 @@ button.xs { white-space:nowrap; }
         <div class="pager">
           <span id="accPageInfo"></span>
           <span class="grow"></span>
-          <button class="xs ghost" id="accPrev">上一页</button>
+          <button class="xs ghost" id="accPrev">Назад</button>
           <span class="num" id="accPageNum"></span>
-          <button class="xs ghost" id="accNext">下一页</button>
+          <button class="xs ghost" id="accNext">Далее</button>
         </div>
       </div>
     </section>
@@ -369,33 +370,33 @@ button.xs { white-space:nowrap; }
     <!-- ══════════ 用量 ══════════ -->
     <section class="view" id="view-usage" hidden>
       <div class="stats">
-        <div class="stat"><div class="v" id="uTotal">-</div><div class="k">累计请求</div></div>
-        <div class="stat good"><div class="v" id="uOk">-</div><div class="k">成功</div></div>
-        <div class="stat bad"><div class="v" id="uFail">-</div><div class="k">失败</div></div>
-        <div class="stat"><div class="v" id="uTokens">-</div><div class="k">Token 合计</div></div>
-        <div class="stat"><div class="v" id="uLatency">-</div><div class="k">平均耗时</div></div>
-        <div class="stat"><div class="v" id="uStream">-</div><div class="k">流式请求</div></div>
+        <div class="stat"><div class="v" id="uTotal">-</div><div class="k">Всего запросов</div></div>
+        <div class="stat good"><div class="v" id="uOk">-</div><div class="k">Успешно</div></div>
+        <div class="stat bad"><div class="v" id="uFail">-</div><div class="k">Ошибка</div></div>
+        <div class="stat"><div class="v" id="uTokens">-</div><div class="k">Всего токенов</div></div>
+        <div class="stat"><div class="v" id="uLatency">-</div><div class="k">Среднее время</div></div>
+        <div class="stat"><div class="v" id="uStream">-</div><div class="k">Потоковые запросы</div></div>
       </div>
       <div class="box">
-        <header><h3>Prompt Cache</h3><span class="hint">token 维度命中率 = cached_tokens / prompt_tokens · 进程内累计 · 标 (est) 的是上游没报、按保守公式估的</span></header>
+        <header><h3>Prompt Cache</h3><span class="hint">Доля входных токенов из кэша за время работы шлюза. Пометка (est) означает оценку.</span></header>
         <div class="stats" style="border:0;border-bottom:1px solid var(--line-soft)">
-          <div class="stat good"><div class="v" id="uCacheHit">-</div><div class="k">命中率</div></div>
-          <div class="stat"><div class="v" id="uCacheTokens">-</div><div class="k">命中 Token</div></div>
-          <div class="stat"><div class="v" id="uCachePrompt">-</div><div class="k">输入 Token</div></div>
-          <div class="stat"><div class="v" id="uCacheEst">-</div><div class="k">其中估算</div></div>
+          <div class="stat good"><div class="v" id="uCacheHit">-</div><div class="k">Доля из кэша</div></div>
+          <div class="stat"><div class="v" id="uCacheTokens">-</div><div class="k">Токены из кэша</div></div>
+          <div class="stat"><div class="v" id="uCachePrompt">-</div><div class="k">Входные токены</div></div>
+          <div class="stat"><div class="v" id="uCacheEst">-</div><div class="k">Из них оценочных</div></div>
         </div>
         <div class="pad">
           <table>
-            <thead><tr><th>模型</th><th class="num">请求</th><th class="num">输入</th><th class="num">命中</th><th class="num">命中率</th></tr></thead>
+            <thead><tr><th>Модель</th><th class="num">Запросы</th><th class="num">Вход</th><th class="num">Из кэша</th><th class="num">Доля из кэша</th></tr></thead>
             <tbody id="cacheModelBody"></tbody>
           </table>
         </div>
       </div>
       <div class="box">
-        <header><h3>分布</h3><span class="hint">按模型 / 按账号（进程内累计）· 请求明细与运行日志见「日志」</span></header>
+        <header><h3>Распределение</h3><span class="hint">Статистика с запуска шлюза. Отдельные запросы видны в журнале.</span></header>
         <div class="pad" style="display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(240px,1fr))">
-          <div><div class="hint" style="margin-bottom:6px">按模型</div><table><tbody id="byModelBody"></tbody></table></div>
-          <div><div class="hint" style="margin-bottom:6px">按账号</div><table><tbody id="byAccountBody"></tbody></table></div>
+          <div><div class="hint" style="margin-bottom:6px">По моделям</div><table><tbody id="byModelBody"></tbody></table></div>
+          <div><div class="hint" style="margin-bottom:6px">По аккаунтам</div><table><tbody id="byAccountBody"></tbody></table></div>
         </div>
       </div>
     </section>
@@ -404,36 +405,36 @@ button.xs { white-space:nowrap; }
     <section class="view" id="view-logs" hidden>
       <div class="box">
         <header>
-          <h3>请求日志</h3>
-          <span class="hint">进程内环形缓冲 · 重启归零 · 只记元数据，不落 prompt/响应原文</span>
+          <h3>Журнал запросов</h3>
+          <span class="hint">Только метаданные. Вопросы и ответы не записываются. При перезапуске журнал очищается.</span>
           <span class="grow"></span>
           <span class="note" id="reqNote">-</span>
-          <button class="xs ghost" id="btnReqCopy" title="复制当前筛选结果（TSV，可直接贴进表格）">复制</button>
+          <button class="xs ghost" id="btnReqCopy" title="Скопировать результат в виде таблицы">Копировать</button>
         </header>
         <div class="tools">
           <div class="row">
             <div class="search">
               <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="7" r="4.4"/><path d="M10.4 10.4 14 14" stroke-linecap="round"/></svg>
-              <input id="reqQ" type="search" placeholder="搜索 路径 / 模型 / 账号 / IP / 请求 ID / 错误" autocomplete="off" spellcheck="false">
+              <input id="reqQ" type="search" placeholder="Поиск по пути, модели, аккаунту, IP или ошибке" autocomplete="off" spellcheck="false">
             </div>
             <div class="chips" id="reqChips">
-              <button data-outcome="all" class="on">全部</button>
-              <button data-outcome="ok">成功</button>
-              <button data-outcome="failed">失败</button>
+              <button data-outcome="all" class="on">Все</button>
+              <button data-outcome="ok">Успешно</button>
+              <button data-outcome="failed">Ошибка</button>
             </div>
             <span class="grow"></span>
-            <label class="sel-note">条数<select id="reqLimit">
+            <label class="sel-note">Записей<select id="reqLimit">
               <option value="100">100</option>
               <option value="200" selected>200</option>
               <option value="500">500</option>
             </select></label>
-            <label class="sel-note"><input type="checkbox" id="reqAuto" checked style="width:auto"> 自动刷新</label>
-            <button class="xs" id="btnReqReload">刷新</button>
+            <label class="sel-note"><input type="checkbox" id="reqAuto" checked style="width:auto"> Автообновление</label>
+            <button class="xs" id="btnReqReload">Обновить</button>
           </div>
         </div>
         <div class="tbl-wrap" style="max-height:52vh">
           <table>
-            <thead><tr><th>时间</th><th>路径</th><th>模型</th><th>账号</th><th>结果</th><th class="num">tok 入/出</th><th class="num">首字节</th><th class="num">耗时</th><th>来源 / 出口</th><th>说明</th></tr></thead>
+            <thead><tr><th>Время</th><th>Путь</th><th>Модель</th><th>Аккаунт</th><th>Результат</th><th class="num">Токены: вход / выход</th><th class="num">Первый байт</th><th class="num">Длительность</th><th>Клиент / прокси</th><th>Подробности</th></tr></thead>
             <tbody id="reqBody"></tbody>
           </table>
         </div>
@@ -441,36 +442,36 @@ button.xs { white-space:nowrap; }
 
       <div class="box">
         <header>
-          <h3>运行日志</h3>
-          <span class="hint">stdout / stderr 镜像：启动、上游报错、请求流水行</span>
+          <h3>Журнал сервера</h3>
+          <span class="hint">Запуск, запросы и ошибки сервиса.</span>
           <span class="grow"></span>
           <div class="chips" id="runChips">
-            <button data-ch="all" class="on">全部</button>
-            <button data-ch="req">请求</button>
-            <button data-ch="err">异常</button>
+            <button data-ch="all" class="on">Все</button>
+            <button data-ch="req">Запросы</button>
+            <button data-ch="err">Ошибки</button>
           </div>
-          <label class="sel-note">行数<select id="runLimit"><option value="200">200</option><option value="400" selected>400</option><option value="1200">全部</option></select></label>
-          <label class="sel-note"><input type="checkbox" id="runPin" checked style="width:auto"> 自动滚动</label>
-          <button class="xs ghost" id="btnRunCopy">复制</button>
-          <button class="xs" id="btnRunReload">刷新</button>
+          <label class="sel-note">Строк<select id="runLimit"><option value="200">200</option><option value="400" selected>400</option><option value="1200">Все</option></select></label>
+          <label class="sel-note"><input type="checkbox" id="runPin" checked style="width:auto"> Автопрокрутка</label>
+          <button class="xs ghost" id="btnRunCopy">Копировать</button>
+          <button class="xs" id="btnRunReload">Обновить</button>
         </header>
-        <div class="logbox" id="runBody"><div class="empty">加载中…</div></div>
+        <div class="logbox" id="runBody"><div class="empty">Загрузка…</div></div>
       </div>
     </section>
 
     <!-- ══════════ 容量 ══════════ -->
     <section class="view" id="view-capacity" hidden>
       <div class="stats">
-        <div class="stat"><div class="v" id="cImg">-</div><div class="k">全池今日可出图（张）</div></div>
-        <div class="stat"><div class="v" id="cVid">-</div><div class="k">全池可做 720P 5s（条）</div></div>
-        <div class="stat"><div class="v" id="cCredits">-</div><div class="k">积分余额合计</div></div>
-        <div class="stat"><div class="v" id="cAccts">-</div><div class="k">可用账号</div></div>
+        <div class="stat"><div class="v" id="cImg">-</div><div class="k">Изображений на сегодня</div></div>
+        <div class="stat"><div class="v" id="cVid">-</div><div class="k">Видео 720p по 5 секунд</div></div>
+        <div class="stat"><div class="v" id="cCredits">-</div><div class="k">Всего кредитов</div></div>
+        <div class="stat"><div class="v" id="cAccts">-</div><div class="k">Доступные аккаунты</div></div>
       </div>
       <div class="box">
-        <header><h3>每号余量</h3><span class="hint">出图按本地每日限额；视频按真实余额 ÷ 单价；明细为余额最高的 100 个</span></header>
+        <header><h3>Остаток по аккаунтам</h3><span class="hint">Изображения: дневной лимит. Видео: баланс, поделённый на цену. Показаны 100 аккаунтов с наибольшим балансом.</span></header>
         <div class="tbl-wrap">
           <table>
-            <thead><tr><th>账号</th><th>今日出图</th><th class="num">剩余张数</th><th class="num">余额</th><th class="num">每日赠送</th><th class="num">可做 720P 5s</th><th class="num">可做 1080P 15s</th></tr></thead>
+            <thead><tr><th>Аккаунт</th><th>Изображения за день</th><th class="num">Осталось изображений</th><th class="num">Баланс</th><th class="num">Дневное начисление</th><th class="num">Видео 720p по 5 с</th><th class="num">Видео 1080p по 15 с</th></tr></thead>
             <tbody id="capBody"></tbody>
           </table>
         </div>
@@ -480,43 +481,43 @@ button.xs { white-space:nowrap; }
     <!-- ══════════ 模型与调试 ══════════ -->
     <section class="view" id="view-models" hidden>
       <div class="box">
-        <header><h3>模型清单</h3><span class="hint" id="modelsNote">与 /v1/models 同一份缓存</span></header>
+        <header><h3>Каталог моделей</h3><span class="hint" id="modelsNote">Тот же список, что в /v1/models.</span></header>
         <div class="tbl-wrap">
           <table>
-            <thead><tr><th>模型</th><th>标题</th><th>媒体</th><th>能力 / 端点</th><th>规格 / 上下文</th><th>备注</th></tr></thead>
+            <thead><tr><th>Модель</th><th>Название</th><th>Тип</th><th>Возможности / маршрут</th><th>Параметры / контекст</th><th>Заметка</th></tr></thead>
             <tbody id="modelBody"></tbody>
           </table>
         </div>
       </div>
       <div class="box">
         <header>
-          <h3>对话框调试</h3>
-          <span class="hint">文本 / 图片 / 视频 · 每轮可展开看请求体与响应 · 会消耗真实额度</span>
+          <h3>Проверить модель</h3>
+          <span class="hint">Проверочный запрос расходует квоту аккаунта. Запрос и ответ можно раскрыть ниже.</span>
           <span class="grow"></span>
           <span class="tag muted mono" id="dbgEndpoint">/v1/chat/completions</span>
-          <button class="xs ghost" id="dbgClear">清空对话</button>
+          <button class="xs ghost" id="dbgClear">Очистить диалог</button>
         </header>
         <div class="chat" id="dbgChat">
           <div class="chat-log" id="dbgLog">
-            <div class="chat-empty" id="dbgEmpty"><b>支持三类模型</b><br>文本（流式多轮）· 图片（文生图 / 图生图，最多 20 张垫图）· 视频（提交后自动轮询）<br>每轮都能展开看请求体与响应</div>
+            <div class="chat-empty" id="dbgEmpty"><b>Выберите модель</b><br>Текст, изображения (до 20 референсов) и видео с проверкой статуса.<br>Нажмите на сообщение, чтобы увидеть запрос и ответ.</div>
           </div>
           <div class="chat-bar">
             <div class="row">
-              <label class="sel-note">模型<select id="dbgModel" style="min-width:210px"></select></label>
-              <label class="sel-note" data-for="text">思考<select id="dbgGear"><option value="fast">fast</option><option value="auto" selected>auto</option><option value="thinking">thinking</option></select></label>
-              <label class="sel-note" data-for="image">画幅<select id="dbgSize"><option value="">默认</option><option value="1:1">1:1</option><option value="4:3">4:3</option><option value="3:4">3:4</option><option value="16:9">16:9</option><option value="9:16">9:16</option><option value="auto">auto</option></select></label>
-              <label class="sel-note" data-for="image">张数<select id="dbgN"><option>1</option><option>2</option><option>3</option><option>4</option></select></label>
-              <label class="sel-note" data-for="image">返回<select id="dbgFmt"><option value="url">url</option><option value="b64_json">b64_json</option></select></label>
-              <label class="sel-note" data-for="image"><button class="xs ghost" id="dbgPick" type="button">垫图</button><span class="note" id="dbgRefName">0 / 20</span><button class="xs ghost" id="dbgRefClear" type="button" title="清空垫图" hidden>×</button></label>
-              <label class="sel-note" data-for="video">画幅<select id="dbgVSize"><option>16:9</option><option>9:16</option><option>1:1</option></select></label>
-              <label class="sel-note" data-for="video">分辨率<select id="dbgRes"><option>720P</option><option>1080P</option></select></label>
-              <label class="sel-note" data-for="video">时长<select id="dbgDur"><option>5</option><option>10</option><option>15</option></select></label>
-              <label class="sel-note" data-for="video">音轨<select id="dbgAudio"><option value="1">有</option><option value="0">无</option></select></label>
+              <label class="sel-note">Модель<select id="dbgModel" style="min-width:210px"></select></label>
+              <label class="sel-note" data-for="text">Рассуждение<select id="dbgGear"><option value="fast">fast</option><option value="auto" selected>auto</option><option value="thinking">thinking</option></select></label>
+              <label class="sel-note" data-for="image">Формат кадра<select id="dbgSize"><option value="">По умолчанию</option><option value="1:1">1:1</option><option value="4:3">4:3</option><option value="3:4">3:4</option><option value="16:9">16:9</option><option value="9:16">9:16</option><option value="auto">auto</option></select></label>
+              <label class="sel-note" data-for="image">Количество<select id="dbgN"><option>1</option><option>2</option><option>3</option><option>4</option></select></label>
+              <label class="sel-note" data-for="image">Ответ<select id="dbgFmt"><option value="url">url</option><option value="b64_json">b64_json</option></select></label>
+              <label class="sel-note" data-for="image"><button class="xs ghost" id="dbgPick" type="button">Референсы</button><span class="note" id="dbgRefName">0 / 20</span><button class="xs ghost" id="dbgRefClear" type="button" title="Очистить референсы" hidden>×</button></label>
+              <label class="sel-note" data-for="video">Формат кадра<select id="dbgVSize"><option>16:9</option><option>9:16</option><option>1:1</option></select></label>
+              <label class="sel-note" data-for="video">Разрешение<select id="dbgRes"><option>720P</option><option>1080P</option></select></label>
+              <label class="sel-note" data-for="video">Длительность<select id="dbgDur"><option>5</option><option>10</option><option>15</option></select></label>
+              <label class="sel-note" data-for="video">Звук<select id="dbgAudio"><option value="1">Да</option><option value="0">Нет</option></select></label>
             </div>
             <div class="refs" id="dbgRefs" hidden></div>
             <div class="chat-input">
-              <textarea id="dbgPrompt" rows="2" placeholder="输入消息，Enter 发送 / Shift+Enter 换行"></textarea>
-              <button class="primary" id="dbgSend">发送</button>
+              <textarea id="dbgPrompt" rows="2" placeholder="Сообщение. Enter — отправить, Shift+Enter — новая строка."></textarea>
+              <button class="primary" id="dbgSend">Отправить</button>
             </div>
           </div>
         </div>
@@ -528,58 +529,58 @@ button.xs { white-space:nowrap; }
     <section class="view" id="view-config" hidden>
       <div class="box" id="keyBox">
         <header>
-          <h3>调用接入（Token）</h3>
-          <span class="hint">调模型时 Authorization: Bearer 后面那串，就是这里的 key</span>
+          <h3>Ключи API</h3>
+          <span class="hint">Передавайте ключ API в заголовке Authorization: Bearer.</span>
           <span class="grow"></span>
           <span class="note" id="keySrc">-</span>
-          <button class="xs primary" id="btnKeyNew">生成新 Key</button>
+          <button class="xs primary" id="btnKeyNew">Создать ключ</button>
         </header>
         <div class="pad" id="keyWarn" hidden></div>
-        <div id="keyRows"><div class="pad hint">加载中…</div></div>
+        <div id="keyRows"><div class="pad hint">Загрузка…</div></div>
         <div class="pad" style="border-top:1px solid var(--line-soft)">
-          <div class="hint" style="margin-bottom:6px">Base URL（OpenAI 兼容：/v1/chat/completions · /v1/images/generations；视频走方舟原生：/api/v3/contents/generations/tasks）</div>
+          <div class="hint" style="margin-bottom:6px">Адрес API для чата, изображений и видео</div>
           <div class="codebox" id="keyBase">-</div>
-          <div class="hint" style="margin:12px 0 6px">最小可用示例（key 放环境变量，别写死在脚本里）</div>
+          <div class="hint" style="margin:12px 0 6px">Пример запроса с ключом из переменной окружения</div>
           <div class="codebox" id="keyCurl">-</div>
           <div class="hint" style="margin-top:10px">
-            托管文件：<span class="mono" id="keyPath">apikeys.json</span>。该文件一旦存在就<b>完全接管</b> config.json 的 api_keys；
-            面板里生成的 key <b>立即生效</b>，撤销的 <b>立即失效</b>（不用重启）。首次生成会把当前生效的 key 一并写入，老客户端不会断。
+            Файл ключей:<span class="mono" id="keyPath">apikeys.json</span>. Он<b>заменяет</b> список api_keys в config.json.
+            Новые ключи <b>действуют сразу</b>, отозванные <b>перестают работать</b>. При первом сохранении действующие ключи сохраняются.
           </div>
         </div>
       </div>
       <div class="box">
         <header>
-          <h3>可热更新配置</h3>
-          <span class="hint" id="cfgFormHint">改完点保存立即生效（标「需重启」的除外）</span>
+          <h3>Параметры шлюза</h3>
+          <span class="hint" id="cfgFormHint">Сохраните изменения. Перезапуск нужен только для отмеченных настроек.</span>
           <span class="grow"></span>
-          <button class="xs primary" id="btnCfgSave">保存</button>
+          <button class="xs primary" id="btnCfgSave">Сохранить</button>
         </header>
-        <div class="pad" id="cfgForm"><div class="hint">加载中…</div></div>
+        <div class="pad" id="cfgForm"><div class="hint">Загрузка…</div></div>
       </div>
       <div class="box">
-        <header><h3>服务</h3><span class="grow"></span><span class="note" id="cfgVer"></span></header>
+        <header><h3>Сервис</h3><span class="grow"></span><span class="note" id="cfgVer"></span></header>
         <div class="pad" style="display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr))" id="cfgService"></div>
       </div>
       <div class="box">
-        <header><h3>上游</h3></header>
+        <header><h3>Сервис Qwen</h3></header>
         <div class="pad" style="display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr))" id="cfgUpstream"></div>
       </div>
       <div class="box">
-        <header><h3>账号池与配额</h3></header>
+        <header><h3>Аккаунты и квоты</h3></header>
         <div class="pad" style="display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr))" id="cfgPool"></div>
       </div>
       <div class="box">
-        <header><h3>视频积分单价</h3><span class="hint">按模型版本分两套：happyhorse11（默认）与 1.0 不同价</span></header>
-        <div class="pad"><table><thead><tr><th>档位</th><th class="num">5s</th><th class="num">10s</th><th class="num">15s</th></tr></thead><tbody id="cfgPricing"></tbody></table></div>
+        <header><h3>Цена видео в кредитах</h3><span class="hint">Тарифы happyhorse11 и версии 1.0 различаются.</span></header>
+        <div class="pad"><table><thead><tr><th>Вариант</th><th class="num">5s</th><th class="num">10s</th><th class="num">15s</th></tr></thead><tbody id="cfgPricing"></tbody></table></div>
       </div>
       <div class="box">
-        <header><h3>账号清单来源</h3></header>
+        <header><h3>Хранение аккаунтов</h3></header>
         <div class="pad">
           <div class="state ok" id="cfgAccountsSrc">-</div>
           <div class="hint" style="margin-top:8px">
-            面板的导入/删除写在 <span class="mono" id="cfgAccountsPath">accounts.json</span>；
-            该文件一旦存在就<b>完全接管</b> config.json 里的 accounts。
-            想退回声明式配置：删掉该文件并重启。
+            Изменения сохраняются в <span class="mono" id="cfgAccountsPath">accounts.json</span>；
+            . Этот файл<b>заменяет</b> список accounts в config.json.
+            Чтобы снова использовать config.json, удалите файл списка и перезапустите шлюз.
           </div>
         </div>
       </div>
@@ -590,45 +591,45 @@ button.xs { white-space:nowrap; }
 <!-- 导入账号 -->
 <div class="veil" id="importVeil" hidden>
   <div class="dlg">
-    <header><h3>导入账号</h3><span class="grow"></span><button class="xs ghost" id="importClose">关闭</button></header>
+    <header><h3>Добавить аккаунт</h3><span class="grow"></span><button class="xs ghost" id="importClose">Закрыть</button></header>
     <div class="body">
       <div class="tabs">
-        <button data-tab="paste" class="on">粘贴文本</button>
-        <button data-tab="file">导入文件</button>
-        <button data-tab="single">单个添加</button>
+        <button data-tab="paste" class="on">Вставить список</button>
+        <button data-tab="file">Из файла</button>
+        <button data-tab="single">Один аккаунт</button>
       </div>
 
       <div id="tab-paste">
         <div class="field">
-          <label>每行一个账号：<b>邮箱 密码 [账号名] [备注]</b>；分隔符支持空格 / 逗号 / 竖线 / 制表符。也可直接粘贴 JSON 数组。</label>
-          <textarea id="pasteBox" rows="9" placeholder="zhang@example.com 密码 main 主号
-li@example.com,密码2
-wang@example.com|密码3|备用号"></textarea>
+          <label>Один аккаунт на строку:<b>почта пароль [название] [заметка]</b>. Разделители: пробел, запятая, вертикальная черта или табуляция. Поддерживается JSON.</label>
+          <textarea id="pasteBox" rows="9" placeholder="zhang@example.com Пароль main Основной
+li@example.com,Пароль2
+wang@example.com|Пароль3|Резервный"></textarea>
         </div>
       </div>
 
       <div id="tab-file" hidden>
         <div class="field">
-          <label>选择 .txt 或 .json（内容会填进「粘贴文本」，可先检查再导入）</label>
+          <label>Выберите файл TXT или JSON. Проверьте содержимое перед импортом.</label>
           <input type="file" id="fileBox" accept=".txt,.json,text/plain,application/json">
         </div>
       </div>
 
       <div id="tab-single" hidden>
-        <div class="field"><label>账号名（可空，默认取邮箱前缀）</label><input id="sName" placeholder="main"></div>
-        <div class="field"><label>邮箱</label><input id="sEmail" placeholder="name@example.com"></div>
-        <div class="field"><label>密码</label><input id="sPass" type="password" placeholder="上游登录密码"></div>
-        <div class="field"><label>备注（可空）</label><input id="sNote" placeholder="Go 套餐 / 备用"></div>
+        <div class="field"><label>Название (по умолчанию часть адреса до @)</label><input id="sName" placeholder="main"></div>
+        <div class="field"><label>Почта</label><input id="sEmail" placeholder="name@example.com"></div>
+        <div class="field"><label>Пароль</label><input id="sPass" type="password" placeholder="Пароль аккаунта Qwen"></div>
+        <div class="field"><label>Заметка (необязательно)</label><input id="sNote" placeholder="Например, личный аккаунт"></div>
       </div>
 
       <div class="state" id="importHint" hidden></div>
       <div class="res" id="importRes" hidden></div>
     </div>
     <footer>
-      <label class="sel-note"><input type="checkbox" id="importValidate" checked style="width:auto"> 导入前逐个登录校验</label>
+      <label class="sel-note"><input type="checkbox" id="importValidate" checked style="width:auto"> Проверить вход перед добавлением</label>
       <span class="grow"></span>
       <span class="note" id="importCount"></span>
-      <button class="primary" id="importGo">开始导入</button>
+      <button class="primary" id="importGo">Добавить</button>
     </footer>
   </div>
 </div>
@@ -636,41 +637,41 @@ wang@example.com|密码3|备用号"></textarea>
 <!-- 生成新 Key -->
 <div class="veil" id="newKeyVeil" hidden>
   <div class="dlg" style="width:560px">
-    <header><h3>生成新 Key</h3><span class="grow"></span><button class="xs ghost" id="newKeyClose">关闭</button></header>
+    <header><h3>Создать ключ</h3><span class="grow"></span><button class="xs ghost" id="newKeyClose">Закрыть</button></header>
     <div class="body">
       <div class="field">
-        <label>备注（给谁用：脚本名 / 客户端名 —— 以后撤销时能一眼认出）</label>
-        <input id="newKeyNote" placeholder="例如：mac 上的 Cherry Studio">
+        <label>Название клиента или скрипта</label>
+        <input id="newKeyNote" placeholder="Например, настольный клиент">
       </div>
-      <div class="hint">生成后立即生效，并写入托管的 apikeys.json；首次生成会把当前生效的 key 一起写入，老客户端不会断。</div>
+      <div class="hint">Новый ключ сразу начнёт работать и сохранится в apikeys.json вместе с действующими ключами.</div>
       <div class="state" id="newKeyHint" hidden></div>
       <div class="codebox" id="newKeyOut" hidden style="margin-top:10px"></div>
-      <div id="newKeyCopyWrap" hidden style="margin-top:9px"><button class="xs" id="newKeyCopy">复制这串 key</button></div>
+      <div id="newKeyCopyWrap" hidden style="margin-top:9px"><button class="xs" id="newKeyCopy">Скопируйте ключ</button></div>
     </div>
-    <footer><span class="grow"></span><button class="primary" id="newKeyGo">生成</button></footer>
+    <footer><span class="grow"></span><button class="primary" id="newKeyGo">Создать</button></footer>
   </div>
 </div>
 
 <!-- 登录面板：默认密钥登录（config.panel.key，留空回落前门 API Key） -->
 <div class="veil" id="keyVeil" hidden>
   <div class="dlg" style="width:430px">
-    <header><h3 id="authTitle">输入密钥进入</h3><span class="grow"></span><button class="xs ghost" id="authClose" title="关掉登录框；之后点左上角状态可重新打开">关闭</button></header>
+    <header><h3 id="authTitle">Вход в панель Qwen</h3><span class="grow"></span><button class="xs ghost" id="authClose" title="Закрыть окно входа">Закрыть</button></header>
     <div class="body">
       <div id="authKey">
         <div class="field">
-          <label>面板密钥</label>
+          <label>Ключ панели</label>
           <input id="keyInput" type="password" placeholder="sk-…（config.panel.key）" autocomplete="off">
         </div>
-        <div class="hint" style="margin-top:6px">也可以直接填前门 API Key。登录后换成 HttpOnly 会话，明文不会留在浏览器里。</div>
+        <div class="hint" style="margin-top:6px">Введите локальный ключ панели. После входа браузер использует сессию HttpOnly.</div>
       </div>
       <div id="authPass" hidden>
-        <div class="field"><label>用户名</label><input id="loginUser" value="admin" autocomplete="username"></div>
-        <div class="field"><label>密码</label><input id="loginPass" type="password" autocomplete="current-password"></div>
+        <div class="field"><label>Имя пользователя</label><input id="loginUser" value="admin" autocomplete="username"></div>
+        <div class="field"><label>Пароль</label><input id="loginPass" type="password" autocomplete="current-password"></div>
       </div>
       <div class="state err" id="keyErr" hidden></div>
-      <div class="hint" style="margin-top:10px" id="authSwitchWrap" hidden><a href="#" id="authSwitch">改用账号密码登录</a></div>
+      <div class="hint" style="margin-top:10px" id="authSwitchWrap" hidden><a href="#" id="authSwitch">Войти по имени и паролю</a></div>
     </div>
-    <footer><span class="grow"></span><button class="primary" id="keyGo">进入</button></footer>
+    <footer><span class="grow"></span><button class="primary" id="keyGo">Войти</button></footer>
   </div>
 </div>
 
@@ -687,8 +688,8 @@ const key = () => localStorage.getItem(KEY_STORE) || '';
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const num = n => (n == null || n === '') ? '-' : Number(n).toLocaleString('en-US');
 const pct = (a, b) => b > 0 ? Math.min(100, Math.round(a / b * 100)) : 0;
-// fmtSessionHours 会话时长的人话形态：720 → "30 天（720 小时）"。
-const fmtSessionHours = h => (h > 0 && h % 24 === 0) ? (h / 24) + ' 天（' + h + ' 小时）' : (h || 0) + ' 小时';
+// fmtSessionHours 会话时长的人话形态：720 → "30 дн. (720 ч)"。
+const fmtSessionHours = h => (h > 0 && h % 24 === 0) ? (h / 24) + ' дн. (' + h + ' ч)' : (h || 0) + ' ч';
 
 function hdrs(extra) {
   const h = Object.assign({}, extra || {});
@@ -732,11 +733,11 @@ function showAuth(mode, reason) {
   const first = veil.hidden;
   $('#authPass').hidden = isKey;
   $('#authKey').hidden = !isKey;
-  $('#authTitle').textContent = isKey ? '输入密钥进入' : '登录面板';
+  $('#authTitle').textContent = isKey ? 'Вход в панель Qwen' : 'Вход в панель';
   // 两条入口都真能用才给切换链接：配了账密又没配 panel.key 时，密钥那边是死的。
   $('#authSwitchWrap').hidden = !(authHasPass && authHasKey);
-  $('#authSwitch').textContent = isKey ? '改用账号密码登录' : '改用密钥登录';
-  $('#keyGo').textContent = isKey ? '进入' : '登录';
+  $('#authSwitch').textContent = isKey ? 'Войти по имени и паролю' : 'Войти по ключу';
+  $('#keyGo').textContent = isKey ? 'Войти' : 'Войти';
   if (first) {
     $('#keyErr').hidden = true;
     if (reason) { $('#keyErr').textContent = reason; $('#keyErr').hidden = false; }
@@ -754,13 +755,13 @@ function onUnauthorized() {
   markLoggedOut();
   if (!$('#keyVeil').hidden) return;   // 框已经开着：别重置、别抢焦点
   if (authPrompted) return;            // 本次已自动弹过：不再自己爬出来
-  showAuth('key', '登录已失效，请重新输入密钥');
+  showAuth('key', 'Сессия истекла. Введите ключ снова.');
 }
 
 /* markLoggedOut 顶栏状态打成"未登录"，整行可点（点了才重新弹框）。 */
 function markLoggedOut() {
   const s = $('#navState');
-  s.textContent = '未登录 · 点此登录';
+  s.textContent = 'Войти в панель';
   s.style.cursor = 'pointer';
   $('#navPulse').className = 'pulse bad';
 }
@@ -771,7 +772,7 @@ function markOnline() {
   const s = $('#navState');
   authNeeded = false;
   authPrompted = false;
-  s.textContent = '已连接';
+  s.textContent = 'Подключено';
   s.style.cursor = '';
   $('#navPulse').className = 'pulse';
 }
@@ -800,11 +801,11 @@ async function doAuth() {
         $('#btnLogout').hidden = false;
         await loadOverview();
         $('#keyVeil').hidden = true;
-        toast('已进入面板', 'ok');
+        toast('Вход выполнен', 'ok');
         return;
       }
       if (r.status === 401) {
-        err.textContent = d.error || '密钥无效';
+        err.textContent = d.error || 'Неверный ключ';
         err.hidden = false;
         return;
       }
@@ -816,7 +817,7 @@ async function doAuth() {
         $('#keyVeil').hidden = true;
       } catch (e) {
         localStorage.removeItem(KEY_STORE);
-        err.textContent = 'Key 无效：' + e.message;
+        err.textContent = 'Неверный ключ:' + e.message;
         err.hidden = false;
       }
     } catch (e) {
@@ -844,7 +845,7 @@ async function doAuth() {
     $('#btnLogout').hidden = false;
     await loadOverview();
     $('#keyVeil').hidden = true;
-    toast('已登录', 'ok');
+    toast('Вход выполнен', 'ok');
   } catch (e) {
     err.textContent = e.message;
     err.hidden = false;
@@ -860,6 +861,7 @@ const S = {
   sel: new Set(),
 };
 
+let openSingleAccount = location.hash === '#add-account';
 async function loadOverview() {
   const d = await api('/panel/api/overview');
   S.ov = d;
@@ -867,10 +869,16 @@ async function loadOverview() {
   $('#navVer').textContent = 'v' + (d.version || '-');
   $('#navUp').textContent = fmtUp(d.uptime_s);
   const ps = d.pool_stats || {};
-  $('#subMeta').textContent = (ps.total || 0) + ' 账号 · ' + ((d.stats && d.stats.total) || 0) + ' 请求 · 运行 ' + fmtUp(d.uptime_s);
+  $('#subMeta').textContent = (ps.total || 0) + ' Аккаунт · ' + ((d.stats && d.stats.total) || 0) + ' запросов · Работает ' + fmtUp(d.uptime_s);
   renderCurrent();
   // 账号列表是分页取的：汇总刷新后顺带拉当前页（页面不在账号视图就不拉）。
   if (S.view === 'accounts') loadAccounts(S.page).catch(() => {});
+  if(openSingleAccount){
+    openSingleAccount=false;
+    $('#btnImport').click();
+    document.querySelector('.tabs button[data-tab="single"]').click();
+    $('#sEmail').focus();
+  }
 }
 
 function fmtUp(s) {
@@ -890,28 +898,28 @@ function fmtTime(iso) {
   const d = new Date(iso);
   if (isNaN(d)) return '-';
   const diff = (Date.now() - d.getTime()) / 1000;
-  if (diff < 0) return d.toLocaleTimeString('zh-CN');
-  if (diff < 60) return Math.floor(diff) + 's 前';
-  if (diff < 3600) return Math.floor(diff / 60) + 'm 前';
-  if (diff < 86400) return Math.floor(diff / 3600) + 'h 前';
-  return d.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' }) + ' ' + d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+  if (diff < 0) return d.toLocaleTimeString('ru-RU');
+  if (diff < 60) return Math.floor(diff) + ' с назад';
+  if (diff < 3600) return Math.floor(diff / 60) + ' мин назад';
+  if (diff < 86400) return Math.floor(diff / 3600) + ' ч назад';
+  return d.toLocaleDateString('ru-RU', { month: '2-digit', day: '2-digit' }) + ' ' + d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
 }
 
 /* ═══════════════ 账号池 ═══════════════ */
 const VIDEO_MIN = 30; // 最低档 720P 5s，用来判断"余额还能不能做点什么"
 
 function acctStatus(a) {
-  if (a.state === 'auth_dead') return { k: 'dead', t: '失效', cls: 'bad' };
-  if (a.state === 'need_login') return { k: 'need_login', t: '待重登', cls: 'warn' };
-  if (a.state === 'cooling') return { k: 'cooling', t: '冷却 ' + fmtDur(a.cooldown_left_s), cls: 'warn' };
+  if (a.state === 'auth_dead') return { k: 'dead', t: 'Недействителен', cls: 'bad' };
+  if (a.state === 'need_login') return { k: 'need_login', t: 'Требуется вход', cls: 'warn' };
+  if (a.state === 'cooling') return { k: 'cooling', t: 'Пауза ' + fmtDur(a.cooldown_left_s), cls: 'warn' };
   const imgFull = a.image_limit > 0 && a.image_today >= a.image_limit;
   const noCredit = a.credit_known && a.credit_balance < VIDEO_MIN;
-  if (imgFull && noCredit) return { k: 'exhausted', t: '额度用尽', cls: 'warn' };
-  return { k: 'ready', t: '可用', cls: 'ok' };
+  if (imgFull && noCredit) return { k: 'exhausted', t: 'Квота исчерпана', cls: 'warn' };
+  return { k: 'ready', t: 'Доступно', cls: 'ok' };
 }
 
 /* 服务端分页：列表只取当前页，搜索/筛选/排序/分页都在后端做。
-   3000+ 账号时全量 accounts 有 840KB，前端每几秒拉一次并不现实。 */
+   3000+ 账号时全量 accounts Да 840KB，前端每几秒拉一次并不现实。 */
 let accSeq = 0;
 async function loadAccounts(page) {
   if (page != null) S.page = Math.max(0, page);
@@ -941,30 +949,30 @@ function renderAccounts() {
   $('#sCredits').textContent = st.credits_known ? num(st.credits) : '-';
   $('#sVidLeft').textContent = st.credits_known ? num(st.vid_left) : '-';
   $('#accNote').textContent = !st.total ? ''
-    : (!st.credits_known ? '余额未读取，点「刷新余额」'
-      : (st.credits_known < st.total ? '（' + (st.total - st.credits_known) + ' 个余额未读到）' : ''));
+    : (!st.credits_known ? 'Баланс не получен. Нажмите «Обновить баланс».'
+      : (st.credits_known < st.total ? '（' + (st.total - st.credits_known) + ' без данных о балансе)' : ''));
 
   const chips = [
-    ['all', '全部', st.total || 0],
-    ['ready', '可用', st.ready || 0],
-    ['hot', '热池', st.hot || 0],
-    ['cooling', '冷却', st.cooling || 0],
-    ['dead', '失效', st.dead || 0],
-    ['need_login', '待重登', st.need_login || 0],
-    ['exhausted', '额度用尽', st.exhausted || 0],
+    ['all', 'Все', st.total || 0],
+    ['ready', 'Доступно', st.ready || 0],
+    ['hot', 'Активные', st.hot || 0],
+    ['cooling', 'Пауза', st.cooling || 0],
+    ['dead', 'Недействителен', st.dead || 0],
+    ['need_login', 'Требуется вход', st.need_login || 0],
+    ['exhausted', 'Квота исчерпана', st.exhausted || 0],
   ];
   $('#accChips').innerHTML = chips.map(([k, t, n]) =>
-    `<button data-status="${k}" class="${S.status === k ? 'on' : ''}"${k === 'hot' ? ' title="可用 + access token 剩余 >2 分钟：现在就能接流量的号"' : ''}>${t} <span class="note">${n}</span></button>`).join('');
+    `<button data-status="${k}" class="${S.status === k ? 'on' : ''}"${k === 'hot' ? ' title="Доступный аккаунт с сессией, действующей ещё более двух минут"' : ''}>${t} <span class="note">${n}</span></button>`).join('');
 
   // 凭据维度独立于状态：状态「可用」里混着大量票过期的号，这才是真正要区分的那一列。
   const tokChips = [
-    ['all', '全部', st.total || 0],
-    ['alive', '有效', st.token_fresh || 0],
-    ['expired', '过期', st.token_expired || 0],
-    ['unknown', '未知', st.token_unknown || 0],
+    ['all', 'Все', st.total || 0],
+    ['alive', 'Действует', st.token_fresh || 0],
+    ['expired', 'Истёк', st.token_expired || 0],
+    ['unknown', 'Неизвестно', st.token_unknown || 0],
   ];
   $('#accTokChips').innerHTML = tokChips.map(([k, t, n]) =>
-    `<button data-token="${k}" class="${S.tok === k ? 'on' : ''}"${k === 'alive' ? ' title="access token 还没过期（>0s）"' : k === 'expired' ? ' title="access token 已过期，需 refresh 或密码重登才能用"' : ''}>${t} <span class="note">${n}</span></button>`).join('');
+    `<button data-token="${k}" class="${S.tok === k ? 'on' : ''}"${k === 'alive' ? ' title="Сессия ещё действительна"' : k === 'expired' ? ' title="Сессия истекла. Нужен повторный вход или обновление."' : ''}>${t} <span class="note">${n}</span></button>`).join('');
 
   const d = S.acc;
   const items = (d && d.items) || [];
@@ -973,7 +981,7 @@ function renderAccounts() {
   const size = (d && d.size) || S.size || 50;
   const start = ((d && d.page) || 1) - 1;
   $('#accPageInfo').textContent = total
-    ? `第 ${start * size + 1}–${start * size + items.length} / ${total}` : '没有匹配的账号';
+    ? `Строка ${start * size + 1}–${start * size + items.length} / ${total}` : 'Аккаунтов по этому фильтру нет.';
   $('#accPageNum').textContent = ((d && d.page) || 1) + ' / ' + pages;
   $('#accPrev').disabled = !d || d.page <= 1;
   $('#accNext').disabled = !d || d.page >= pages;
@@ -982,25 +990,25 @@ function renderAccounts() {
 
   $('#accBody').innerHTML = items.map(a => {
     const stt = acctStatus(a);
-    const bal = a.credit_known ? num(a.credit_balance) : '<span class="hint">未知</span>';
+    const bal = a.credit_known ? num(a.credit_balance) : '<span class="hint">Неизвестно</span>';
     const img = a.image_limit > 0
       ? `${a.image_today}/${a.image_limit}<div class="bar ${a.image_today >= a.image_limit ? 'warn' : ''}" style="margin-top:4px"><i style="width:${pct(a.image_today, a.image_limit)}%"></i></div>`
       : String(a.image_today || 0);
     const vid = a.video_limit > 0 ? `${a.video_today}/${a.video_limit}` : String(a.video_today || 0);
     // 凭据剩余寿命：未知（非 JWT 的长期凭据）显示未知；
     // 有效标绿、剩不到 2 分钟标黄（选号按 >2 分钟算"热"，黄的就是边界）、过期标红。
-    const tk = !a.token_known ? '<span class="hint">未知</span>'
-      : (a.token_left_s <= 0 ? '<span class="tag bad">过期</span>'
+    const tk = !a.token_known ? '<span class="hint">Неизвестно</span>'
+      : (a.token_left_s <= 0 ? '<span class="tag bad">Истёк</span>'
         : (a.token_left_s <= 120 ? `<span class="tag warn">${a.token_left_s}s</span>`
           : `<span class="tag ok">${Math.floor(a.token_left_s / 60)}m</span>`));
-    // 悬停看 refresh_token 还剩几天（30 天保养一次，不足 3 天标黄）。
-    const rtLeft = !a.refresh_known ? 'refresh_token 未知'
-      : ('refresh_token 还剩 ' + Math.max(0, Math.floor(a.refresh_left_s / 86400)) + ' 天'
-         + (a.refresh_left_s < 3 * 86400 ? '（待保养）' : ''));
+    // 悬停看 refresh_token 还剩几天（30 дн.保养一次，不足 3 дн.标黄）。
+    const rtLeft = !a.refresh_known ? 'refresh_token Неизвестно'
+      : ('До истечения refresh_token: ' + Math.max(0, Math.floor(a.refresh_left_s / 86400)) + ' дн.'
+         + (a.refresh_left_s < 3 * 86400 ? ' (скоро истечёт)' : ''));
     return `<tr data-name="${esc(a.name)}">
       <td class="c-chk"><input type="checkbox" class="rowchk" ${S.sel.has(a.name) ? 'checked' : ''} style="width:auto"></td>
       <td><div class="acc-name">${esc(a.name)}</div><div class="acc-sub">${esc(a.email || '-')}${a.note ? ' · ' + esc(a.note) : ''}</div></td>
-      <td><span class="tag ${stt.cls}">${esc(stt.t)}</span>${a.last_error ? ` <span class="tag muted" title="${esc(a.last_error)}">有错</span>` : ''}</td>
+      <td><span class="tag ${stt.cls}">${esc(stt.t)}</span>${a.last_error ? ` <span class="tag muted" title="${esc(a.last_error)}">Ошибка</span>` : ''}</td>
       <td class="num">${bal}</td>
       <td class="num">${img}</td>
       <td class="num">${vid}</td>
@@ -1009,12 +1017,12 @@ function renderAccounts() {
       <td class="num" title="${esc(rtLeft)}">${tk}</td>
       <td class="note">${a.last_used ? fmtTime(a.last_used) : '-'}</td>
       <td class="c-acts"><div class="acts">
-        <button class="xs" data-act="test">重登</button>
-        <button class="xs" data-act="reset">重置</button>
-        <button class="xs danger" data-act="del">删除</button>
+        <button class="xs" data-act="test">Повторить вход</button>
+        <button class="xs" data-act="reset">Сбросить</button>
+        <button class="xs danger" data-act="del">Удалить</button>
       </div></td>
     </tr>`;
-  }).join('') || `<tr><td colspan="11" style="text-align:center;color:var(--ink-3);padding:26px">${d ? '没有匹配的账号' : '加载中…'}</td></tr>`;
+  }).join('') || `<tr><td colspan="11" style="text-align:center;color:var(--ink-3);padding:26px">${d ? 'Аккаунтов по этому фильтру нет.' : 'Загрузка…'}</td></tr>`;
 
   $('#accChkAll').checked = items.length > 0 && items.every(a => S.sel.has(a.name));
   renderBulk();
@@ -1026,7 +1034,7 @@ function renderBulk() {
     bar = document.createElement('div');
     bar.id = 'bulkbar';
     bar.className = 'bulkbar';
-    bar.innerHTML = '<span class="cnt"></span><button class="xs" data-bulk="reset">重置状态</button><button class="xs danger" data-bulk="del">删除</button><button class="xs ghost" data-bulk="clear">取消</button>';
+    bar.innerHTML = '<span class="cnt"></span><button class="xs" data-bulk="reset">Сбросить состояние</button><button class="xs danger" data-bulk="del">Удалить</button><button class="xs ghost" data-bulk="clear">取消</button>';
     document.body.appendChild(bar);
     bar.addEventListener('click', async e => {
       const b = e.target.closest('[data-bulk]');
@@ -1034,7 +1042,7 @@ function renderBulk() {
       const act = b.dataset.bulk;
       if (act === 'clear') { S.sel.clear(); renderAccounts(); return; }
       const names = Array.from(S.sel);
-      if (act === 'del' && !confirm(`确定删除 ${names.length} 个账号？\n\n会同时写回 accounts.json，重启后也不会回来。`)) return;
+      if (act === 'del' && !confirm(`Удалить выбранные аккаунты: ${names.length}? Записи будут удалены из accounts.json.`)) return;
       let ok = 0, fail = 0;
       for (const n of names) {
         try {
@@ -1043,12 +1051,12 @@ function renderBulk() {
           ok++;
         } catch (err) { fail++; }
       }
-      toast(`${act === 'del' ? '删除' : '重置'}完成：成功 ${ok}${fail ? '，失败 ' + fail : ''}`, fail ? 'err' : 'ok');
+      toast(`${act === 'del' ? 'Удалить' : 'Сбросить'}Готово：Успешно ${ok}${fail ? '，Ошибка ' + fail : ''}`, fail ? 'err' : 'ok');
       S.sel.clear();
       await loadOverview();
     });
   }
-  bar.querySelector('.cnt').textContent = `已选 ${S.sel.size} 个`;
+  bar.querySelector('.cnt').textContent = `Выбрано: ${S.sel.size} шт.`;
   bar.classList.toggle('on', S.sel.size > 0);
 }
 
@@ -1067,8 +1075,8 @@ function renderUsage() {
   const mk = Object.entries(byModel).sort((a, b) => b[1] - a[1]);
   const ak = Object.entries(byAccount).sort((a, b) => b[1] - a[1]);
   const mmax = mk.length ? mk[0][1] : 1, amax = ak.length ? ak[0][1] : 1;
-  $('#byModelBody').innerHTML = mk.length ? mk.map(([k, v]) => row(k, v, mmax)).join('') : '<tr><td class="hint">暂无</td></tr>';
-  $('#byAccountBody').innerHTML = ak.length ? ak.map(([k, v]) => row(k, v, amax)).join('') : '<tr><td class="hint">暂无</td></tr>';
+  $('#byModelBody').innerHTML = mk.length ? mk.map(([k, v]) => row(k, v, mmax)).join('') : '<tr><td class="hint">Пока нет данных</td></tr>';
+  $('#byAccountBody').innerHTML = ak.length ? ak.map(([k, v]) => row(k, v, amax)).join('') : '<tr><td class="hint">Пока нет данных</td></tr>';
 
   // ── Prompt Cache 看板 ──
   // 口径是 token 维度，不是请求维度：一个 20k prompt 命中一次，
@@ -1089,7 +1097,7 @@ function renderUsage() {
     return `<tr><td class="mono">${esc(k)}</td><td class="num">${num(v.reqs || 0)}</td>` +
       `<td class="num">${num(p)}</td><td class="num">${num(h)}</td>` +
       `<td class="num">${pctHit > 0 ? pctHit.toFixed(1) + '%' : '—'}</td></tr>`;
-  }).join('') : '<tr><td class="hint" colspan="5">暂无（还没有带 usage 的请求）</td></tr>';
+  }).join('') : '<tr><td class="hint" colspan="5">Нет запросов со статистикой токенов</td></tr>';
 }
 
 /* ═══════════════ 容量 ═══════════════ */
@@ -1100,7 +1108,7 @@ async function renderCapacity() {
   const p720 = (pricing['720P'] && pricing['720P']['5']) || VIDEO_MIN;
   const p1080 = (pricing['1080P'] && pricing['1080P']['15']) || 120;
 
-  // 汇总直接用服务端的全池统计；明细只取余额最高的 100 个 ——
+  // 汇总直接用服务端的全池统计；明细只取余额最高的 100 шт. ——
   // 3000+ 账号的明细既传不动，也没人真的会一屏看 3000 行。
   $('#cImg').textContent = st.img_left || 0;
   $('#cVid').textContent = st.vid_left || 0;
@@ -1123,13 +1131,13 @@ async function renderCapacity() {
         <div class="num" style="text-align:left">${a.image_limit > 0 ? `${a.image_today}/${a.image_limit}` : (a.image_today || 0)}</div>
         ${a.image_limit > 0 ? `<div class="bar ${barCls}" style="margin-top:4px"><i style="width:${ratio}%"></i></div>` : ''}
       </td>
-      <td class="num">${left == null ? '不限' : left}</td>
-      <td class="num">${bal == null ? '<span class="hint">未知</span>' : num(bal)}</td>
+      <td class="num">${left == null ? 'Без ограничений' : left}</td>
+      <td class="num">${bal == null ? '<span class="hint">Неизвестно</span>' : num(bal)}</td>
       <td class="num" title="${dailyTitle(a)}">${dailyLabel(a)}</td>
       <td class="num">${v == null ? '-' : v}</td>
       <td class="num">${v15 == null ? '-' : v15}</td>
     </tr>`;
-  }).join('') || `<tr><td colspan="7" style="text-align:center;color:var(--ink-3);padding:26px">没有账号</td></tr>`;
+  }).join('') || `<tr><td colspan="7" style="text-align:center;color:var(--ink-3);padding:26px">Нет аккаунтов</td></tr>`;
 }
 
 /* 每日赠送时间：上游没有"下次重置"字段，只能从积分流水里推最近一次入账，
@@ -1146,11 +1154,11 @@ function dailyLabel(a) {
   return fmtDay(d);
 }
 function dailyTitle(a) {
-  if (!a.credit_daily_at) return '还没读到每日赠送流水（余额刷新后出现）';
+  if (!a.credit_daily_at) return 'Сначала обновите баланс.';
   const d = new Date(a.credit_daily_at);
   if (isNaN(d)) return '';
   const next = new Date(d.getTime() + 86400000);
-  return `上次入账 ${fmtDay(d)} · 预计下次 ${fmtDay(next)}（按 +24h 推算）`;
+  return `Последнее начисление: ${fmtDay(d)} · Ожидаемое начисление: ${fmtDay(next)} (оценка через 24 ч)`;
 }
 
 /* ═══════════════ 模型 ═══════════════ */
@@ -1167,15 +1175,15 @@ async function renderModels() {
   const list = S.models || [];
   $('#modelBody').innerHTML = list.map(m => {
     const caps = [];
-    if (m.thinking) caps.push('思考档');
-    if (m.vision) caps.push('视觉');
-    if (m.verified) caps.push('已实测');
+    if (m.thinking) caps.push('Режим рассуждения');
+    if (m.vision) caps.push('Изображения');
+    if (m.verified) caps.push('Проверено');
     // 生成模型没有上下文/能力标记，改展示可调档位 —— 空着会被当成"信息缺失"。
     const spec = [];
     const p = m.params || {};
-    if (p.resolutions) spec.push('分辨率 ' + p.resolutions.join('/'));
-    if (p.durations) spec.push('时长 ' + p.durations.map(d => d + 's').join('/'));
-    if (p.sizes) spec.push('画幅 ' + p.sizes.join('/'));
+    if (p.resolutions) spec.push('Разрешение ' + p.resolutions.join('/'));
+    if (p.durations) spec.push('Длительность ' + p.durations.map(d => d + 's').join('/'));
+    if (p.sizes) spec.push('Формат кадра ' + p.sizes.join('/'));
     // 生成模型必须走专用端点，把这个信息放在「能力」列最显眼的位置。
     const eps = m.endpoint ? `<span class="tag ok mono">${esc(m.endpoint)}</span>` : '';
     return `<tr>
@@ -1186,7 +1194,7 @@ async function renderModels() {
       <td>${m.context_length ? num(m.context_length) : (spec.join(' · ') || '-')}</td>
       <td class="note">${esc(m.notes || '')}</td>
     </tr>`;
-  }).join('') || `<tr><td colspan="6" style="text-align:center;color:var(--ink-3);padding:26px">没有模型</td></tr>`;
+  }).join('') || `<tr><td colspan="6" style="text-align:center;color:var(--ink-3);padding:26px">Модели пока недоступны</td></tr>`;
   // 对话框调试：文本 / 图片 / 视频三类一起列，选中项决定走哪个端点。
   renderDebugModels(list);
 }
@@ -1198,6 +1206,40 @@ function kv(k, v) { return `<div><div class="hint">${k}</div><div class="mono" s
    保存走 POST /panel/api/config → 写回 config.json 并**立即替换运行时快照**，
    所以账号池限额/冷却这类改完当场生效，不用重启。 */
 const CFG = { fields: [], values: {}, writable: false, loaded: false };
+const fieldRu={
+  default_model:['Модель по умолчанию','Используется, если клиент не передал model.'],
+  default_thinking:['Режим рассуждения','auto — автоматически, thinking — с рассуждением, fast — быстрый ответ.'],
+  expose_reasoning:['Передавать рассуждение','Добавляет reasoning_content в ответ.'],
+  image_model:['Модель изображений','Пустое значение оставляет модель на выбор Qwen.'],
+  image_timeout_s:['Время ожидания изображения, с','Лимит одной попытки генерации.'],
+  model_aliases:['Псевдонимы текстовых моделей','Формат: название клиента=модель Qwen, по одной паре на строку.'],
+  blob_base_url:['Адрес хранилища изображений','Qwen должен иметь доступ к этому адресу, чтобы получить вложение.'],
+  'upstream.egress_ip_url':['Адрес проверки исходящего IP','Значение «-» отключает проверку.'],
+  'upstream.timeout_s':['Время ожидания ответа Qwen, с','Для изменения тайм-аута нужен перезапуск.'],
+  'pool.max_rotate':['Лимит попыток смены аккаунта','Для одного запроса.'],
+  'pool.cooldown_soft_s':['Пауза после ограничения, с','После временного ограничения запросов.'],
+  'pool.cooldown_auth_s':['Пауза после ошибки входа, с','После ответов 401 и 403.'],
+  'pool.max_inflight_per_account':['Одновременных запросов на аккаунт','Лимит запросов в работе.'],
+  'pool.max_image_per_day':['Изображений в день','На один аккаунт. 0 — без локального ограничения.'],
+  'pool.max_video_per_day':['Видеозадач в день','Используется, если не заданы цены в кредитах.'],
+  'pool.max_video_credits_per_day':['Кредитов на видео в день','На один аккаунт. 0 — учитывать фактический баланс.'],
+  'pool.warm_chats_per_account':['Подготовленных диалогов на аккаунт','0 — не создавать диалоги заранее.'],
+  'pool.chat_pool_ttl_s':['Срок подготовленного диалога, с','По истечении срока шлюз отбросит пустой диалог.'],
+  'pool.keepalive.tick_s':['Интервал обслуживания, с','Проверка сессий и подготовленных соединений.'],
+  'pool.keepalive.token_window_s':['Обновлять сессию за, с','Укажите больше интервала обслуживания.'],
+  'pool.keepalive.conc_factor':['Коэффициент подготовки','Определяет число соединений по пиковой нагрузке.'],
+  'pool.keepalive.adopt_batch':['Обновлений токена за проход','Верхний предел для одного прохода.'],
+  'pool.keepalive.adopt_per_min':['Обновлений токена в минуту','Ограничивает частоту фоновых входов.'],
+  'pool.keepalive.parallel':['Параллельные проверки','Число одновременно обслуживаемых аккаунтов.'],
+  'pool.keepalive.batch_max':['Аккаунтов за проход','Верхний предел для одного цикла обслуживания.'],
+  'pool.keepalive.target_max':['Максимум подготовленных аккаунтов','Верхний предел при росте нагрузки.'],
+  'pool.keepalive.hot_rotate_s':['Интервал смены активной группы, с','0 — отключить плановую смену.'],
+  'video.root_model':['Модель видео','Идентификатор модели на стороне Qwen.'],
+  'video.resolution':['Разрешение видео','Используется, если клиент не задал разрешение.'],
+  'video.duration':['Длительность видео, с','Поддерживаются 5, 10 и 15 секунд.'],
+  'video.size':['Формат видео','Например, 16:9, 1:1 или 9:16.'],
+  'video.aliases':['Псевдонимы моделей видео','Формат: название клиента=модель Qwen.']
+};
 
 function cfgGroupOf(key) {
   if (key.indexOf('pool.') === 0) return 'pool';
@@ -1205,7 +1247,7 @@ function cfgGroupOf(key) {
   if (key.indexOf('upstream.') === 0) return 'upstream';
   return 'base';
 }
-const CFG_GROUPS = [['base', '基础'], ['pool', '账号池与限额'], ['video', '视频'], ['upstream', '上游']];
+const CFG_GROUPS = [['base', 'Основные'], ['pool', 'Аккаунты и лимиты'], ['video', 'Видео'], ['upstream', 'Сервис Qwen']];
 
 // kvLines 把键值对象渲染成「每行 key=value」。键排序保证每次打开面板顺序一致。
 function kvLines(obj) {
@@ -1222,11 +1264,11 @@ function parseKV(text) {
     const s = lines[i].trim();
     if (!s) continue;
     const p = s.indexOf('=');
-    if (p <= 0) return { err: '第 ' + (i + 1) + ' 行不是「名字=内核」：' + s };
+    if (p <= 0) return { err: 'Строка ' + (i + 1) + ': ожидается название=модель: ' + s };
     const k = s.slice(0, p).trim();
     const v = s.slice(p + 1).trim();
-    if (!k) return { err: '第 ' + (i + 1) + ' 行缺少名字' };
-    if (!v) return { err: '第 ' + (i + 1) + ' 行缺少内核（' + k + '=?）' };
+    if (!k) return { err: 'Строка ' + (i + 1) + ': укажите название' };
+    if (!v) return { err: 'Строка ' + (i + 1) + ': укажите модель (' + k + '=?）' };
     obj[k] = v;
   }
   return { obj: obj };
@@ -1236,11 +1278,11 @@ function cfgInput(f, v) {
   const attrs = 'data-key="' + f.key + '"';
   if (f.type === 'kv') {
     return '<textarea ' + attrs + ' rows="3" spellcheck="false" '
-      + 'placeholder="客户端模型名=内核名，每行一条">' + esc(kvLines(v)) + '</textarea>';
+      + 'placeholder="Модель клиента=модель Qwen, по одной на строку">' + esc(kvLines(v)) + '</textarea>';
   }
   if (f.type === 'bool') {
-    return '<select ' + attrs + '><option value="true"' + (v ? ' selected' : '') + '>开</option>'
-      + '<option value="false"' + (!v ? ' selected' : '') + '>关</option></select>';
+    return '<select ' + attrs + '><option value="true"' + (v ? ' selected' : '') + '>Включено</option>'
+      + '<option value="false"' + (!v ? ' selected' : '') + '>Выключено</option></select>';
   }
   if (f.type === 'enum') {
     return '<select ' + attrs + '>' + (f.enum || []).map(e =>
@@ -1256,8 +1298,8 @@ function cfgInput(f, v) {
 
 function renderConfigForm() {
   const box = $('#cfgForm');
-  if (!CFG.loaded) { box.innerHTML = '<div class="hint">加载中…</div>'; return; }
-  if (!CFG.fields.length) { box.innerHTML = '<div class="hint">没有可编辑项</div>'; return; }
+  if (!CFG.loaded) { box.innerHTML = '<div class="hint">Загрузка…</div>'; return; }
+  if (!CFG.fields.length) { box.innerHTML = '<div class="hint">Нет доступных настроек</div>'; return; }
   const dis = CFG.writable ? '' : ' disabled';
   box.innerHTML = CFG_GROUPS.map(function (g) {
     const fs = CFG.fields.filter(f => cfgGroupOf(f.key) === g[0]);
@@ -1265,18 +1307,18 @@ function renderConfigForm() {
     return '<div style="margin-bottom:14px">'
       + '<div class="hint" style="margin:0 0 8px;font-weight:600">' + g[1] + '</div>'
       + '<div style="display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(240px,1fr))">'
-      + fs.map(f => '<div class="field"' + (f.type === 'kv' ? ' style="grid-column:1/-1"' : '') + '><label>' + esc(f.label)
-        + (f.hot ? '' : ' <span class="tag warn">需重启</span>')
+      + fs.map(f => '<div class="field"' + (f.type === 'kv' ? ' style="grid-column:1/-1"' : '') + '><label>' + esc(fieldRu[f.key]?.[0]||f.key)
+        + (f.hot ? '' : ' <span class="tag warn">Нужен перезапуск</span>')
         + '</label>'
         // 把 disabled 插到标签名的第一个 '>' 前：对 input/select 都成立
         + cfgInput(f, CFG.values[f.key]).replace('>', dis + '>')
-        + '<div class="hint">' + esc(f.hint || f.key) + '</div></div>').join('')
+        + '<div class="hint">' + esc(fieldRu[f.key]?.[1] || f.key) + '</div></div>').join('')
       + '</div></div>';
   }).join('');
   $('#btnCfgSave').disabled = !CFG.writable;
   $('#cfgFormHint').textContent = CFG.writable
-    ? '改完点保存立即生效（标「需重启」的除外）'
-    : '启动时没指定 -config，只能查看';
+    ? 'Сохраните изменения. Перезапуск нужен только для отмеченных настроек.'
+    : 'Конфигурация доступна только для чтения.';
 }
 
 async function loadConfigForm(force) {
@@ -1290,7 +1332,7 @@ async function loadConfigForm(force) {
     CFG.writable = !!d.writable;
     CFG.loaded = true;
   } catch (e) {
-    $('#cfgForm').innerHTML = '<div class="state err">读取失败：' + esc(e.message) + '</div>';
+    $('#cfgForm').innerHTML = '<div class="state err">Ошибка чтения: ' + esc(e.message) + '</div>';
     return;
   }
   renderConfigForm();
@@ -1319,8 +1361,8 @@ async function saveConfigForm() {
       : String(old == null ? '' : old) === String(v);
     if (!same) patch[k] = v;
   });
-  if (kvErr) { toast('模型别名格式不对：' + kvErr, 'err'); return; }
-  if (!Object.keys(patch).length) { toast('没有改动', 'ok'); return; }
+  if (kvErr) { toast('Неверный псевдоним модели:' + kvErr, 'err'); return; }
+  if (!Object.keys(patch).length) { toast('Изменений нет', 'ok'); return; }
 
   const btn = $('#btnCfgSave');
   btn.disabled = true;
@@ -1332,10 +1374,10 @@ async function saveConfigForm() {
       body: JSON.stringify({ patch: patch }),
     });
     const d = await r.json().catch(() => ({}));
-    if (!r.ok) { toast(d.error || ('保存失败 HTTP ' + r.status), 'err'); return; }
+    if (!r.ok) { toast(d.error || ('Ошибка сохранения, HTTP ' + r.status), 'err'); return; }
     const nr = d.need_restart || [];
-    if (nr.length) toast('已保存 ' + (d.applied || []).length + ' 项；' + nr.length + ' 项需重启才生效', 'err');
-    else toast('已保存 ' + (d.applied || []).length + ' 项，立即生效', 'ok');
+    if (nr.length) toast('Сохранено: ' + (d.applied || []).length + '; ' + nr.length + ' изменений требуют перезапуска', 'err');
+    else toast('Сохранено: ' + (d.applied || []).length + '. Настройки применены', 'ok');
     CFG.values = d.values || CFG.values;
     renderConfigForm();
   } finally {
@@ -1348,33 +1390,33 @@ function renderConfig() {
   loadConfigForm(false).catch(() => {});
   $('#cfgVer').textContent = 'v' + (S.ov.version || '-') + ' · uptime ' + fmtUp(S.ov.uptime_s);
   $('#cfgService').innerHTML = [
-    kv('监听', esc(c.listen || '-')),
-    kv('默认模型', esc(c.default_model || '-')),
-    kv('默认思考档', esc(c.default_thinking || '-')),
+    kv('Адрес сервера', esc(c.listen || '-')),
+    kv('Модель по умолчанию', esc(c.default_model || '-')),
+    kv('Режим рассуждения', esc(c.default_thinking || '-')),
     kv('API Key', c.api_key_required
-      ? '<span class="tag ok">已启用 ' + (c.api_keys_count || 1) + ' 把</span>' + (c.api_keys_managed ? ' <span class="tag muted">面板托管</span>' : '')
-      : '<span class="tag bad">未启用</span>'),
+      ? '<span class="tag ok">Ключей: ' + (c.api_keys_count || 1) + '</span>' + (c.api_keys_managed ? ' <span class="tag muted">Управление в панели</span>' : '')
+      : '<span class="tag bad">Выключено</span>'),
     // 面板登录形态：密钥（panel.key）/ API Key 回落 / 可选账密 —— 只显示有没有配，不回显值。
-    kv('面板登录', (c.panel && c.panel.key_set ? '<span class="tag ok">自定义密钥</span>' : '<span class="tag muted">用 API Key</span>')
-      + (c.panel && c.panel.password_enabled ? ' <span class="tag muted">+ 账密</span>' : '')),
-    kv('会话有效期', fmtSessionHours((c.panel && c.panel.session_hours) || 720)),
-    kv('reasoning 透出', c.reasoning ? '开' : '关'),
+    kv('Вход в панель', (c.panel && c.panel.key_set ? '<span class="tag ok">Ключ панели</span>' : '<span class="tag muted">Ключ API</span>')
+      + (c.panel && c.panel.password_enabled ? ' <span class="tag muted">+ пароль</span>' : '')),
+    kv('Срок сессии', fmtSessionHours((c.panel && c.panel.session_hours) || 720)),
+    kv('Передавать рассуждение', c.reasoning ? 'Включено' : 'Выключено'),
   ].join('');
   const u = c.upstream || {};
   $('#cfgUpstream').innerHTML = [
-    kv('chat 域', esc(u.base_url || '-')),
-    kv('版本头', esc(u.version || '-')),
-    kv('单请求超时', (u.timeout_s || '-') + 's'),
-    kv('积分域', esc(c.entitlement_base_url || '-')),
+    kv('Домен чата', esc(u.base_url || '-')),
+    kv('Версия клиента', esc(u.version || '-')),
+    kv('Тайм-аут запроса', (u.timeout_s || '-') + 's'),
+    kv('Домен баланса', esc(c.entitlement_base_url || '-')),
   ].join('');
   const p = c.pool || {};
   $('#cfgPool').innerHTML = [
-    kv('轮换次数上限', p.max_rotate),
-    kv('软冷却 / 失效冷却', (p.cooldown_soft_s || 0) + 's / ' + (p.cooldown_auth_s || 0) + 's'),
-    kv('单号并发', p.max_inflight_per_account),
-    kv('每号每日出图', p.max_image_per_day || '不限'),
-    kv('每号每日视频数', p.max_video_per_day || '不限'),
-    kv('每号每日视频积分预算', p.max_video_credits_per_day ? num(p.max_video_credits_per_day) : '不启用（用真实余额）'),
+    kv('Попыток смены аккаунта', p.max_rotate),
+    kv('Пауза при лимите / ошибке входа', (p.cooldown_soft_s || 0) + 's / ' + (p.cooldown_auth_s || 0) + 's'),
+    kv('Запросов одновременно на аккаунт', p.max_inflight_per_account),
+    kv('Изображений на аккаунт в день', p.max_image_per_day || 'Без ограничений'),
+    kv('Видео на аккаунт в день', p.max_video_per_day || 'Без ограничений'),
+    kv('Кредитов на видео в день', p.max_video_credits_per_day ? num(p.max_video_credits_per_day) : 'По фактическому балансу'),
   ].join('');
   const pr = (c.video && c.video.pricing) || {};
   const durs = ['5', '10', '15'];
@@ -1385,11 +1427,11 @@ function renderConfig() {
   });
   $('#cfgPricing').innerHTML = resKeys.map(res =>
     `<tr><td class="mono">${esc(res)}</td>${durs.map(d => `<td class="num">${pr[res][d] != null ? pr[res][d] : '-'}</td>`).join('')}</tr>`
-  ).join('') || '<tr><td colspan="4" class="hint">未配置价格表</td></tr>';
+  ).join('') || '<tr><td colspan="4" class="hint">Цены не заданы</td></tr>';
 
   const sf = c.state_file || '';
   $('#cfgAccountsPath').textContent = sf ? sf.replace(/\/[^/]*$/, '/accounts.json') : 'accounts.json';
-  $('#cfgAccountsSrc').textContent = `当前 ${((S.ov.pool_stats || {}).total || 0)} 个账号在池 —— 启动日志里「账号清单由面板托管」那行说明是不是来自 accounts.json`;
+  $('#cfgAccountsSrc').textContent = `Сейчас: ${((S.ov.pool_stats || {}).total || 0)} аккаунтов. Добавленные через панель аккаунты хранятся в accounts.json.`;
   // key 列表单独取：它带明文，不塞进 5s 轮询的 overview（也没必要每 5 秒重传一遍）。
   loadKeys().catch(() => {});
 }
@@ -1419,36 +1461,36 @@ function resultOf(r) {
   const code = r.status || 0;
   const err = r.error || '';
   if (err) {
-    if (/timeout|deadline|no such host|connection reset|EOF/i.test(err)) return ['中断', 'warn'];
-    if (code === 0) return ['中断', 'warn'];
-    return ['流错', 'bad'];
+    if (/timeout|deadline|no such host|connection reset|EOF/i.test(err)) return ['Прервано', 'warn'];
+    if (code === 0) return ['Прервано', 'warn'];
+    return ['Ошибка потока', 'bad'];
   }
   if (code >= 300) return [String(code), 'warn'];
-  return ['成功', 'ok'];
+  return ['Успешно', 'ok'];
 }
 
 function renderReqTable() {
   const rows = LOGS.reqs || [];
-  $('#reqNote').textContent = rows.length + ' 条' + (LOGS.reqTotal > rows.length ? ' / 缓存 ' + LOGS.reqTotal : '');
+  $('#reqNote').textContent = rows.length + ' записей' + (LOGS.reqTotal > rows.length ? ' / в журнале ' + LOGS.reqTotal : '');
   $('#reqBody').innerHTML = rows.length ? rows.map(r => {
     const code = r.status || 0;
     const [resLabel, cls] = resultOf(r);
-    const note = r.error || (r.degraded ? '降级: ' + r.degraded : '');
+    const note = r.error || (r.degraded ? 'Ограничение: ' + r.degraded : '');
     return `<tr title="${esc(r.id || '')} · ${esc(r.user_agent || '')}">
       <td class="note">${fmtTime(r.time)}</td>
       <td class="mono">${esc(r.path || '-')}</td>
-      <td class="mono">${esc(r.model || '-')}${r.ref_images ? ' <span class="tag muted">垫图 ' + r.ref_images + '</span>' : ''}</td>
+      <td class="mono">${esc(r.model || '-')}${r.ref_images ? ' <span class="tag muted">Референсы ' + r.ref_images + '</span>' : ''}</td>
       <td class="mono">${esc(r.account || '-')}${r.chat_id
-        ? '<br><span class="hint cp" data-copy="' + esc(r.chat_id) + '" title="点一下复制完整 chat_id · 产物没回来时可拿它去上游会话历史里取">' + esc(String(r.chat_id).slice(0, 8)) + '…</span>'
+        ? '<br><span class="hint cp" data-copy="' + esc(r.chat_id) + '" title="Скопировать идентификатор диалога">' + esc(String(r.chat_id).slice(0, 8)) + '…</span>'
         : ''}</td>
-      <td><span class="tag ${cls}">${esc(resLabel)}</span>${r.stream ? ' <span class="tag muted">流</span>' : ''}</td>
+      <td><span class="tag ${cls}">${esc(resLabel)}</span>${r.stream ? ' <span class="tag muted">Поток</span>' : ''}</td>
       <td class="num">${r.prompt_tokens || 0} / ${r.output_tokens || 0}</td>
       <td class="num">${r.first_byte_ms ? r.first_byte_ms + 'ms' : '-'}</td>
       <td class="num">${r.duration_ms ? r.duration_ms + 'ms' : '-'}</td>
-      <td class="note" title="来源=谁调的我们 · 出口=我们访问上游用的 IP（账号对应 socks5 的实测值）">${esc(r.client_ip || '-')}${r.egress_ip ? '<br><span class="mono hint">出口 ' + esc(r.egress_ip) + '</span>' : ''}</td>
+      <td class="note" title="Адрес клиента и исходящий IP шлюза">${esc(r.client_ip || '-')}${r.egress_ip ? '<br><span class="mono hint">Прокси ' + esc(r.egress_ip) + '</span>' : ''}</td>
       <td class="note" title="${esc(note)}">${esc((note || '-').slice(0, 60))}</td>
     </tr>`;
-  }).join('') : `<tr><td colspan="10" style="text-align:center;color:var(--ink-3);padding:26px">没有匹配的请求</td></tr>`;
+  }).join('') : `<tr><td colspan="10" style="text-align:center;color:var(--ink-3);padding:26px">Нет подходящих запросов</td></tr>`;
 }
 
 async function loadRunLog() {
@@ -1462,8 +1504,8 @@ async function loadRunLog() {
 function runClass(t) {
   if (!t) return '';
   if (t.indexOf('[req]') === 0) return 'req';
-  if (/错误|失败|panic|fatal|error|ERROR|⚠️/.test(t)) return 'bad';
-  if (/冷却|风控|warn|WARN|限流/.test(t)) return 'warn';
+  if (/错误|Ошибка|panic|fatal|error|ERROR|⚠️/.test(t)) return 'bad';
+  if (/Пауза|风控|warn|WARN|限流/.test(t)) return 'warn';
   return '';
 }
 
@@ -1478,16 +1520,16 @@ function runFiltered() {
 function renderRunLog() {
   const box = $('#runBody');
   if (!LOGS.runEnabled) {
-    box.innerHTML = '<div class="empty">运行日志未启用（服务端没有挂缓冲）</div>';
+    box.innerHTML = '<div class="empty">Журнал сервера отключён</div>';
     return;
   }
   const rows = runFiltered();
   box.innerHTML = rows.length ? rows.map(l => {
     const c = runClass(l.text);
     const d = new Date(l.time);
-    const ts = isNaN(d) ? '--:--:--' : d.toLocaleTimeString('zh-CN', { hour12: false });
+    const ts = isNaN(d) ? '--:--:--' : d.toLocaleTimeString('ru-RU', { hour12: false });
     return `<div class="ln ${c}"><span class="ts">${ts}</span><span class="tx">${esc(l.text)}</span></div>`;
-  }).join('') : '<div class="empty">暂无日志</div>';
+  }).join('') : '<div class="empty">Журнал пуст</div>';
   if (LOGS.pin) box.scrollTop = box.scrollHeight;
 }
 
@@ -1499,7 +1541,7 @@ async function renderLogs(force) {
 }
 
 function copyText(txt, msg) {
-  const done = () => toast(msg || '已复制', 'ok');
+  const done = () => toast(msg || 'Скопировано', 'ok');
   if (navigator.clipboard && window.isSecureContext) {
     navigator.clipboard.writeText(txt).then(done).catch(() => fallbackCopy(txt, done));
   } else {
@@ -1513,7 +1555,7 @@ function fallbackCopy(txt, done) {
   ta.style.cssText = 'position:fixed;left:-9999px;top:0';
   document.body.appendChild(ta);
   ta.select();
-  try { document.execCommand('copy'); done(); } catch (e) { toast('复制失败，请手动选择', 'err'); }
+  try { document.execCommand('copy'); done(); } catch (e) { toast('Не удалось скопировать. Выделите текст вручную.', 'err'); }
   ta.remove();
 }
 
@@ -1531,43 +1573,43 @@ function renderKeys() {
   if (!d) return;
   const keys = d.keys || [];
   const base = d.base_url || location.origin;
-  $('#keySrc').textContent = d.managed ? '托管 · ' + (d.path || 'apikeys.json') : '来自 config.json / 环境变量';
+  $('#keySrc').textContent = d.managed ? 'Файл: ' + (d.path || 'apikeys.json') : 'Из config.json или окружения';
   $('#keyPath').textContent = d.path || 'apikeys.json';
   $('#keyBase').textContent = base + '/v1';
 
   const warn = $('#keyWarn');
   if (!d.auth_required) {
     warn.hidden = false;
-    warn.innerHTML = '<div class="warnbox">当前<b>没有任何 key</b>：前门不鉴权，任何拿到地址的人都能烧你的账号额度。点右上角「生成新 Key」立刻补上。</div>';
+    warn.innerHTML = '<div class="warnbox">Ключи API не заданы. Создайте ключ, чтобы ограничить доступ к шлюзу.</div>';
   } else {
     warn.hidden = true;
   }
 
   $('#keyRows').innerHTML = keys.length ? keys.map(k => {
     const shown = KEYS.shown.has(k.key);
-    const created = k.created ? new Date(k.created).toLocaleDateString('zh-CN') : '';
+    const created = k.created ? new Date(k.created).toLocaleDateString('ru-RU') : '';
     return `<div class="keyrow" data-key="${esc(k.key)}">
       <code>${esc(shown ? k.key : k.mask)}</code>
-      <button class="xs ghost" data-act="toggle">${shown ? '隐藏' : '显示'}</button>
-      <button class="xs ghost" data-act="copy">复制</button>
+      <button class="xs ghost" data-act="toggle">${shown ? 'Скрыть' : 'Показать'}</button>
+      <button class="xs ghost" data-act="copy">Копировать</button>
       <span class="grow"></span>
-      <span class="note">${esc(k.note || '无备注')}${created ? ' · ' + created : ''}</span>
-      <button class="xs danger" data-act="del">撤销</button>
+      <span class="note">${esc(k.note || 'Без заметки')}${created ? ' · ' + created : ''}</span>
+      <button class="xs danger" data-act="del">Отозвать</button>
     </div>`;
-  }).join('') : '<div class="pad hint">还没有 key（前门不鉴权）</div>';
+  }).join('') : '<div class="pad hint">Нет ключей API. Запросы не требуют авторизации.</div>';
 
   const model = (S.ov && S.ov.config && S.ov.config.default_model) || 'qwen3.7-plus';
   const curl = [
-    'export QWEN2API_KEY=sk-…             # 换成上面任意一把',
+    'export QWEN2API_KEY=sk-…             # укажите локальный ключ API',
     'curl -s ' + base + '/v1/chat/completions \\',
     '  -H "Authorization: Bearer $QWEN2API_KEY" -H "Content-Type: application/json" \\',
-    '  -d \'{"model":"' + model + '","messages":[{"role":"user","content":"你好"}]}\'',
+    '  -d \'{"model":"' + model + '","messages":[{"role":"user","content":"Привет"}]}\'',
   ];
   $('#keyCurl').textContent = curl.join('\n');
 }
 
 /* ═══════════════ 视图切换 ═══════════════ */
-const TITLES = { accounts: '账号池', usage: '用量', logs: '日志', capacity: '容量', models: '模型与调试', config: '配置' };
+const TITLES = { accounts: 'Аккаунты', usage: 'Статистика', logs: 'Журнал', capacity: 'Лимиты', models: 'Модели и проверка', config: 'Настройки' };
 function renderCurrent() {
   if (!S.ov) return;
   if (S.view === 'accounts') renderAccounts();
@@ -1609,8 +1651,8 @@ function parseAccounts(text) {
         password: x.password || x.pass || x.pwd || '',
         note: x.note || x.remark || '',
       })).filter(x => x.email);
-      return { list, err: list.length ? '' : 'JSON 里没解析出带 email 的账号' };
-    } catch (e) { return { list: [], err: 'JSON 解析失败：' + e.message }; }
+      return { list, err: list.length ? '' : 'В JSON нет аккаунтов с электронной почтой' };
+    } catch (e) { return { list: [], err: 'Некорректный JSON: ' + e.message }; }
   }
   const list = [];
   t.split(/\r?\n/).forEach(line => {
@@ -1620,17 +1662,17 @@ function parseAccounts(text) {
     if (parts.length < 2) return;
     list.push({ email: parts[0], password: parts[1], name: parts[2] || '', note: parts[3] || '' });
   });
-  return { list, err: list.length ? '' : '没解析出账号（每行至少要有「邮箱 密码」两段）' };
+  return { list, err: list.length ? '' : 'В каждой строке укажите почту и пароль' };
 }
 
 function importPreview() {
   if (importTab === 'single') {
     const email = $('#sEmail').value.trim();
-    $('#importCount').textContent = email ? '1 个' : '';
+    $('#importCount').textContent = email ? '1 шт.' : '';
     return { list: email ? [{ name: $('#sName').value.trim(), email, password: $('#sPass').value, note: $('#sNote').value.trim() }] : [], err: '' };
   }
   const r = parseAccounts($('#pasteBox').value);
-  $('#importCount').textContent = r.list.length ? r.list.length + ' 个' : '';
+  $('#importCount').textContent = r.list.length ? r.list.length + ' шт.' : '';
   return r;
 }
 
@@ -1644,10 +1686,10 @@ function hint(msg, ok) {
 async function doImport() {
   const pv = importPreview();
   if (pv.err) { hint(pv.err, false); return; }
-  if (!pv.list.length) { hint('没有可导入的账号', false); return; }
+  if (!pv.list.length) { hint('Введите данные аккаунта', false); return; }
 
   const btn = $('#importGo');
-  btn.disabled = true; btn.textContent = '导入中…';
+  btn.disabled = true; btn.textContent = 'Добавляем…';
   $('#importRes').hidden = true; $('#importHint').hidden = true;
   try {
     const res = await api('/panel/api/accounts/import', {
@@ -1655,19 +1697,19 @@ async function doImport() {
       body: JSON.stringify({ accounts: pv.list, validate: $('#importValidate').checked }),
     });
     const rows = (res.results || []).map(r => `<div class="row">
-      <span class="tag ${r.ok ? 'ok' : 'bad'}">${r.ok ? '成功' : '跳过'}</span>
+      <span class="tag ${r.ok ? 'ok' : 'bad'}">${r.ok ? 'Успешно' : 'Пропущено'}</span>
       <span class="em">${esc(r.name || '-')} · ${esc(r.email || '')}</span>
       <span class="why" title="${esc(r.error || '')}">${esc((r.error || '').slice(0, 80))}</span></div>`).join('');
-    $('#importRes').innerHTML = rows || '<div class="row"><span class="em">没有结果</span></div>';
+    $('#importRes').innerHTML = rows || '<div class="row"><span class="em">Нет результатов</span></div>';
     $('#importRes').hidden = false;
-    const msg = `导入完成：成功 ${res.imported}，跳过 ${res.skipped}（共 ${res.total}）` + (res.persist_error ? '｜落盘失败：' + res.persist_error : '');
+    const msg = `Добавлено: ${res.imported}, пропущено: ${res.skipped} (всего: ${res.total}）` + (res.persist_error ? '; ошибка сохранения: ' + res.persist_error : '');
     hint(msg, res.ok);
     toast(msg, res.ok ? 'ok' : 'err');
     if (res.imported > 0) { $('#pasteBox').value = ''; await loadOverview(); }
   } catch (e) {
-    hint('导入失败：' + e.message, false);
+    hint('Ошибка импорта:' + e.message, false);
   } finally {
-    btn.disabled = false; btn.textContent = '开始导入';
+    btn.disabled = false; btn.textContent = 'Добавить';
   }
 }
 
@@ -1701,7 +1743,7 @@ function dbgJSON(v) {
   try {
     return JSON.stringify(v, (k, val) => {
       if (typeof val === 'string' && val.length > 600) {
-        return val.slice(0, 120) + '…（已折叠 ' + (val.length / 1048576).toFixed(2) + 'MB）';
+        return val.slice(0, 120) + '… (скрыто: ' + (val.length / 1048576).toFixed(2) + 'MB）';
       }
       return val;
     }, 2);
@@ -1728,14 +1770,14 @@ function dbgNewTurn(prompt, media) {
 
   const u = dbgNode('div', 'turn user');
   const ub = dbgNode('div', 'bub');
-  ub.append(dbgNode('div', 'who', '你'), dbgNode('div', 'txt', prompt));
+  ub.append(dbgNode('div', 'who', 'Вы'), dbgNode('div', 'txt', prompt));
   if (media === 'image' && DBG.refs.length) {
     const th = dbgNode('div', 'thumbs');
     DBG.refs.forEach((r, i) => {
       const im = dbgNode('img');
       im.src = r.dataURI;
-      im.alt = r.name || ('垫图 ' + (i + 1));
-      im.title = '第 ' + (i + 1) + ' 张 · ' + (r.name || '');
+      im.alt = r.name || ('Референсы ' + (i + 1));
+      im.title = 'Строка ' + (i + 1) + ' шт. · ' + (r.name || '');
       th.append(im);
     });
     ub.append(th);
@@ -1746,7 +1788,7 @@ function dbgNewTurn(prompt, media) {
   const bb = dbgNode('div', 'bub pending');
   const who = dbgNode('div', 'who');
   who.append(
-    dbgNode('span', 'pill', { text: '文本', image: '图片', video: '视频' }[media]),
+    dbgNode('span', 'pill', { text: 'Текст', image: 'Изображения', video: 'Видео' }[media]),
     dbgNode('span', 'note', DBG_EP[media]),
   );
   const body = dbgNode('div', 'txt', '');
@@ -1765,9 +1807,9 @@ function dbgDone(turn) {
 
 function dbgFail(turn, status, text) {
   turn.bub.classList.remove('pending');
-  turn.who.append(dbgNode('span', 'pill bad', status ? 'HTTP ' + status : '失败'));
+  turn.who.append(dbgNode('span', 'pill bad', status ? 'HTTP ' + status : 'Ошибка'));
   turn.body.textContent = '';
-  const err = dbgNode('div', 'txt', text || '请求失败');
+  const err = dbgNode('div', 'txt', text || 'Ошибка запроса');
   err.style.color = 'var(--bad)';
   turn.bub.append(err);
 }
@@ -1783,7 +1825,7 @@ async function dbgBlobURL(url) {
 async function dbgFillImg(img, url) {
   try { img.src = await dbgBlobURL(url); }
   catch (e) {
-    const box = dbgNode('div', 'err', '取图失败：' + e.message);
+    const box = dbgNode('div', 'err', 'Не удалось получить изображение:' + e.message);
     img.replaceWith(box);
   }
 }
@@ -1793,7 +1835,7 @@ async function dbgSendText(turn, model, prompt) {
   const msgs = DBG.history.slice();
   msgs.push({ role: 'user', content: prompt });
   const payload = { model, thinking: $('#dbgGear').value, stream: true, messages: msgs };
-  turn.bub.append(dbgIO('请求体', dbgJSON(payload)));
+  turn.bub.append(dbgIO('Тело запроса', dbgJSON(payload)));
 
   const r = await fetch(DBG_BASE + '/v1/chat/completions', {
     method: 'POST',
@@ -1807,7 +1849,7 @@ async function dbgSendText(turn, model, prompt) {
   let buf = '', raw = '', reasoning = '', content = '', usage = null;
   const rdet = dbgNode('details', 'reason');
   const rpre = dbgNode('pre', '');
-  rdet.append(dbgNode('summary', '', '思考过程（流式）'), rpre);
+  rdet.append(dbgNode('summary', '', 'Рассуждение'), rpre);
 
   while (true) {
     const chunk = await rd.read();
@@ -1839,8 +1881,8 @@ async function dbgSendText(turn, model, prompt) {
   }
 
   DBG.history.push({ role: 'user', content: prompt }, { role: 'assistant', content });
-  const tail = raw.length >= 12000 ? '…（前段省略，仅留尾部）\n' + raw.slice(-6000) : raw;
-  dbgSetResp(turn, '响应（SSE 原始' + (usage ? ' · ' + (usage.total_tokens || '-') + ' tok' : '') + '）', tail);
+  const tail = raw.length >= 12000 ? '… (показан конец)\n' + raw.slice(-6000) : raw;
+  dbgSetResp(turn, 'Ответ (исходный SSE' + (usage ? ' · ' + (usage.total_tokens || '-') + ' tok' : '') + '）', tail);
 }
 
 /* ---- 图片 ---- */
@@ -1859,10 +1901,10 @@ async function dbgSendImage(turn, model, prompt) {
   if (echo.image) {
     const n = DBG.refs.length;
     const kb = Math.round(DBG.refs.reduce((s, r) => s + (r.bytes || 0), 0) / 1024);
-    echo.image = n > 1 ? ('（' + n + ' 张 data URI，共 ' + kb + 'KB）')
+    echo.image = n > 1 ? ('（' + n + ' изобр., размер: ' + kb + 'KB）')
                        : ('（data URI，' + kb + 'KB）');
   }
-  turn.bub.append(dbgIO('请求体', dbgJSON(echo)));
+  turn.bub.append(dbgIO('Тело запроса', dbgJSON(echo)));
 
   const r = await fetch(DBG_BASE + '/v1/images/generations', {
     method: 'POST',
@@ -1872,7 +1914,7 @@ async function dbgSendImage(turn, model, prompt) {
   const txt = await r.text();
   let j = null;
   try { j = JSON.parse(txt); } catch (e) { /* 非 JSON 走失败分支 */ }
-  if (!r.ok || !j) { dbgFail(turn, r.status, (txt || '空响应').slice(0, 1200)); return; }
+  if (!r.ok || !j) { dbgFail(turn, r.status, (txt || 'Пустой ответ').slice(0, 1200)); return; }
 
   const grid = dbgNode('div', 'grid');
   (j.data || []).forEach(d => {
@@ -1892,16 +1934,16 @@ async function dbgSendImage(turn, model, prompt) {
     a.append(im);
     grid.append(a);
   });
-  if (!grid.children.length) { dbgFail(turn, r.status, '返回 200 但没有可用图片'); return; }
+  if (!grid.children.length) { dbgFail(turn, r.status, 'HTTP 200 без изображения'); return; }
   turn.body.append(grid);
-  turn.who.append(dbgNode('span', 'pill ok', (j.data || []).length + ' 张'));
+  turn.who.append(dbgNode('span', 'pill ok', (j.data || []).length + ' шт.'));
 
   const resp = Object.assign({}, j, {
     data: (j.data || []).map(d => Object.assign({}, d, {
       b64_json: d.b64_json ? '（' + Math.round(d.b64_json.length / 1024) + 'KB base64）' : undefined,
     })),
   });
-  dbgSetResp(turn, '响应', dbgJSON(resp));
+  dbgSetResp(turn, 'Ответ', dbgJSON(resp));
 }
 
 /* ---- 视频（提交 + 轮询） ---- */
@@ -1915,7 +1957,7 @@ async function dbgSendVideo(turn, model, prompt) {
     duration: Number($('#dbgDur').value),
     generate_audio: $('#dbgAudio').value === '1',
   };
-  turn.bub.append(dbgIO('请求体', dbgJSON(payload)));
+  turn.bub.append(dbgIO('Тело запроса', dbgJSON(payload)));
 
   const r = await fetch(DBG_BASE + DBG_EP.video, {
     method: 'POST',
@@ -1925,12 +1967,12 @@ async function dbgSendVideo(turn, model, prompt) {
   const txt = await r.text();
   let j = null;
   try { j = JSON.parse(txt); } catch (e) { /* 走失败分支 */ }
-  if (!r.ok || !j) { dbgFail(turn, r.status, (txt || '空响应').slice(0, 1200)); return; }
+  if (!r.ok || !j) { dbgFail(turn, r.status, (txt || 'Пустой ответ').slice(0, 1200)); return; }
 
   const id = j.id;
-  turn.who.append(dbgNode('span', 'pill warn', '排队中'));
-  turn.body.textContent = '任务 ' + id + '（提交只回 id —— 受理 ≠ 成功，要轮询）';
-  dbgSetResp(turn, '响应（提交）', dbgJSON(j));
+  turn.who.append(dbgNode('span', 'pill warn', 'В очереди'));
+  turn.body.textContent = 'Задача ' + id + ' (задача принята, ждём результат)';
+  dbgSetResp(turn, 'Ответ при отправке', dbgJSON(j));
 
   const bar = dbgNode('div', 'bar');
   const fill = dbgNode('i');
@@ -1950,17 +1992,17 @@ async function dbgSendVideo(turn, model, prompt) {
 
     if (pr.status === 'succeeded') {
       pill.className = 'pill ok';
-      pill.textContent = '完成';
+      pill.textContent = 'Готово';
       fill.style.width = '100%';
       const v = dbgNode('video');
       v.controls = true;
       v.style.cssText = 'max-width:100%;margin-top:9px;border-radius:8px;border:1px solid var(--line)';
       turn.body.append(v);
       try { v.src = await dbgBlobURL(DBG_BASE + DBG_EP.video + '/' + encodeURIComponent(id) + '/content'); }
-      catch (e) { turn.body.append(dbgNode('div', 'err', '取回成片失败：' + e.message)); }
+      catch (e) { turn.body.append(dbgNode('div', 'err', 'Не удалось получить видео: ' + e.message)); }
       const src = (pr.content && pr.content.video_url) || '';
       if (src) {
-        const a = dbgNode('a', 'note', '原始 CDN 直链（浏览器可直开；脚本下载需换浏览器 UA）');
+        const a = dbgNode('a', 'note', 'Открыть оригинал с CDN');
         a.href = src;
         a.target = '_blank';
         // 🔴 必须 no-referrer：从面板点过去，浏览器会带 `Referer: <面板域名>`，
@@ -1971,24 +2013,24 @@ async function dbgSendVideo(turn, model, prompt) {
         a.style.marginTop = '7px';
         turn.body.append(a);
       }
-      dbgSetResp(turn, '响应（完成）', dbgJSON(pr));
+      dbgSetResp(turn, 'Ответ（Готово）', dbgJSON(pr));
       return;
     }
     if (pr.status === 'failed') {
       pill.className = 'pill bad';
-      pill.textContent = '失败';
+      pill.textContent = 'Ошибка';
       turn.bub.classList.remove('pending');
-      dbgSetResp(turn, '响应（失败）', dbgJSON(pr));
+      dbgSetResp(turn, 'Ответ（Ошибка）', dbgJSON(pr));
       return;
     }
     // 上游不报百分比：进度条只表达「非终态」，不编数字。
     pill.className = 'pill warn';
-    pill.textContent = pr.status === 'running' ? '生成中' : '排队中';
+    pill.textContent = pr.status === 'running' ? 'Генерация' : 'В очереди';
     fill.style.width = pr.status === 'running' ? '45%' : '8%';
-    dbgSetResp(turn, '响应（轮询）', dbgJSON(pr));
+    dbgSetResp(turn, 'Ответ при проверке статуса', dbgJSON(pr));
   }
   turn.bub.classList.remove('pending');
-  dbgFail(turn, 0, '轮询超时（12 分钟）');
+  dbgFail(turn, 0, 'Истекло время ожидания (12 мин)');
 }
 
 /* ---- 发送入口 ---- */
@@ -1996,13 +2038,13 @@ async function debugSend() {
   if (DBG.busy) return;
   const model = $('#dbgModel').value;
   const prompt = $('#dbgPrompt').value.trim();
-  if (!model) { toast('模型清单还没加载好，稍等一下再发', 'err'); return; }
+  if (!model) { toast('Дождитесь загрузки списка моделей.', 'err'); return; }
   if (!prompt) { $('#dbgPrompt').focus(); return; }
 
   DBG.busy = true;
   const btn = $('#dbgSend');
   btn.disabled = true;
-  btn.textContent = '发送中';
+  btn.textContent = 'Отправка…';
   const media = DBG.media;
   const turn = dbgNewTurn(prompt, media);
   $('#dbgPrompt').value = '';
@@ -2016,7 +2058,7 @@ async function debugSend() {
   } finally {
     DBG.busy = false;
     btn.disabled = false;
-    btn.textContent = '发送';
+    btn.textContent = 'Отправить';
     $('#dbgLog').scrollTop = $('#dbgLog').scrollHeight;
   }
 }
@@ -2028,9 +2070,9 @@ function dbgSyncMedia() {
   $$('#dbgChat [data-for]').forEach(el => { el.hidden = el.dataset.for !== DBG.media; });
   $('#dbgEndpoint').textContent = DBG_EP[DBG.media];
   $('#dbgPrompt').placeholder = {
-    text: '输入消息，Enter 发送 / Shift+Enter 换行',
-    image: '描述画面；垫了图就是图生图（可多张，约 50~120s）',
-    video: '描述镜头与动作（提交后自动轮询，约 3~15 分钟）',
+    text: 'Сообщение. Enter — отправить, Shift+Enter — новая строка.',
+    image: 'Опишите изображение. Можно добавить референсы.',
+    video: 'Опишите сцену и движение. Генерация занимает несколько минут.',
   }[DBG.media];
   dbgRenderRefs();   // 垫图条只在 image 模型下出现
 }
@@ -2039,14 +2081,14 @@ function dbgSyncMedia() {
 // 所以 FileReader 的异步回调必须回填到**预占的槽位**，不能"谁先读完谁先 push"。
 function dbgPickRefs(files) {
   const room = DBG_MAX_REFS - DBG.refs.length;
-  if (room <= 0) { toast('最多 ' + DBG_MAX_REFS + ' 张垫图（后端同一上限）', 'err'); return; }
+  if (room <= 0) { toast('Максимум: ' + DBG_MAX_REFS + ' изображений', 'err'); return; }
   // 合计上限要做，不然 20 张各自合规、加起来几百 MB 的请求会把网关拖死。
   let used = DBG.refs.reduce((s, r) => s + (r.bytes || 0), 0);
   const list = Array.from(files || []).filter(f => {
-    if (!/^image\//.test(f.type)) { toast('跳过非图片：' + f.name, 'err'); return false; }
-    if (f.size > DBG_MAX_REF_BYTES) { toast('跳过超过 8MB 的图：' + f.name, 'err'); return false; }
+    if (!/^image\//.test(f.type)) { toast('Это не изображение: ' + f.name, 'err'); return false; }
+    if (f.size > DBG_MAX_REF_BYTES) { toast('Файл больше 8 МБ: ' + f.name, 'err'); return false; }
     if (used + f.size > DBG_MAX_REF_TOTAL) {
-      toast('垫图合计上限 16MB，跳过：' + f.name, 'err');
+      toast('Общий лимит 16 МБ, пропущено: ' + f.name, 'err');
       return false;
     }
     used += f.size;
@@ -2054,7 +2096,7 @@ function dbgPickRefs(files) {
   });
   if (!list.length) return;
   const take = list.slice(0, room);
-  if (list.length > room) toast('只收前 ' + room + ' 张（上限 ' + DBG_MAX_REFS + '）', 'err');
+  if (list.length > room) toast('Добавлено: ' + room + ' шт. (лимит: ' + DBG_MAX_REFS + '）', 'err');
 
   const slots = new Array(take.length).fill(null);
   let left = take.length;
@@ -2068,7 +2110,7 @@ function dbgPickRefs(files) {
       slots[i] = { name: file.name, dataURI: String(fr.result), bytes: file.size };
       if (--left === 0) done();
     };
-    fr.onerror = () => { toast('读不了：' + file.name, 'err'); if (--left === 0) done(); };
+    fr.onerror = () => { toast('Не удалось прочитать: ' + file.name, 'err'); if (--left === 0) done(); };
     fr.readAsDataURL(file);
   });
 }
@@ -2079,14 +2121,14 @@ function dbgRenderRefs() {
   box.innerHTML = '';
   DBG.refs.forEach((r, i) => {
     const cell = dbgNode('div', 'ref');
-    cell.title = r.name || ('垫图 ' + (i + 1));
+    cell.title = r.name || ('Референсы ' + (i + 1));
     const im = dbgNode('img');
     im.src = r.dataURI;
-    im.alt = r.name || ('垫图 ' + (i + 1));
+    im.alt = r.name || ('Референсы ' + (i + 1));
     const no = dbgNode('span', 'no', String(i + 1));
     const rm = dbgNode('button', 'rm', '×');
     rm.type = 'button';
-    rm.title = '移除第 ' + (i + 1) + ' 张';
+    rm.title = 'Убрать изображение №' + (i + 1) + ' шт.';
     rm.addEventListener('click', e => {
       e.preventDefault();
       e.stopPropagation();
@@ -2100,14 +2142,14 @@ function dbgRenderRefs() {
   const n = DBG.refs.length;
   const mb = DBG.refs.reduce((s, r) => s + (r.bytes || 0), 0) / 1048576;
   $('#dbgRefName').textContent = n
-    ? (n + ' 张 · ' + (mb < 0.1 ? '<0.1' : mb.toFixed(1)) + 'MB · 按序号提交')
+    ? (n + ' шт. · ' + (mb < 0.1 ? '<0.1' : mb.toFixed(1)) + 'MB · в порядке добавления')
     : ('0 / ' + DBG_MAX_REFS);
   $('#dbgRefClear').hidden = !n;
-  $('#dbgPick').textContent = n ? '加垫图' : '垫图';
+  $('#dbgPick').textContent = n ? 'Добавить изображение' : 'Референсы';
 }
 
 function dbgClearAll() {
-  if (DBG.busy) { toast('等这一轮跑完再清', 'err'); return; }
+  if (DBG.busy) { toast('Дождитесь завершения запроса', 'err'); return; }
   DBG.history = [];
   DBG.refs = [];
   dbgRenderRefs();
@@ -2115,7 +2157,7 @@ function dbgClearAll() {
   log.innerHTML = '';
   const e = dbgNode('div', 'chat-empty');
   e.id = 'dbgEmpty';
-  e.innerHTML = '<b>支持三类模型</b><br>文本（流式多轮）· 图片（文生图 / 图生图）· 视频（提交后自动轮询）<br>每轮都能展开看请求体与响应';
+  e.innerHTML = '<b>Выберите модель</b><br>Текст, изображения и видео<br>Нажмите на сообщение, чтобы увидеть запрос и ответ.';
   log.append(e);
 }
 
@@ -2123,7 +2165,7 @@ function dbgClearAll() {
 function renderDebugModels(list) {
   const sel = $('#dbgModel');
   DBG.mediaOf.clear();
-  const groups = [['text', '文本'], ['image', '图片'], ['video', '视频']];
+  const groups = [['text', 'Текст'], ['image', 'Изображения'], ['video', 'Видео']];
   const html = groups.map(([k, label]) => {
     const items = (list || []).filter(m => (m.media || 'text') === k);
     if (!items.length) return '';
@@ -2159,10 +2201,10 @@ function bind() {
   });
 
   $('#btnRefresh').addEventListener('click', async () => {
-    try { await loadOverview(); toast('已刷新', 'ok'); } catch (e) { toast('刷新失败: ' + e.message, 'err'); }
+    try { await loadOverview(); toast('Обновлено', 'ok'); } catch (e) { toast('Не удалось обновить: ' + e.message, 'err'); }
   });
 
-  // 搜索防抖：每敲一个字就发一次请求会把后端打热（3000 个账号的快照不便宜）。
+  // 搜索防抖：每敲一个字就发一次请求会把后端打热（3000 шт.账号的快照不便宜）。
   let qTimer = null;
   $('#accQ').addEventListener('input', e => {
     S.q = e.target.value;
@@ -2212,24 +2254,24 @@ function bind() {
     const btn = e.target.closest('[data-act]');
     if (!btn) return;
     const act = btn.dataset.act;
-    const label = act === 'test' ? '重登' : act === 'reset' ? '重置' : '删除';
+    const label = act === 'test' ? 'Повторить вход' : act === 'reset' ? 'Сбросить' : 'Удалить';
     try {
       if (act === 'test') {
         btn.disabled = true; btn.textContent = '…';
         await api('/panel/api/accounts/test?name=' + encodeURIComponent(name), { method: 'POST' });
-        toast(name + ' 重登成功', 'ok');
+        toast(name + ': вход выполнен', 'ok');
       } else if (act === 'reset') {
         await api('/panel/api/reset?name=' + encodeURIComponent(name), { method: 'POST' });
-        toast(name + ' 状态已重置', 'ok');
+        toast(name + ': состояние сброшено', 'ok');
       } else {
-        if (!confirm(`删除账号 ${name}？\n\n会写回 accounts.json，重启后也不会回来。`)) return;
+        if (!confirm(`Удалить аккаунт ${name}? Запись будет удалена из accounts.json.`)) return;
         await api('/panel/api/accounts/delete?name=' + encodeURIComponent(name), { method: 'POST' });
-        toast(name + ' 已删除', 'ok');
+        toast(name + ' Удалено', 'ok');
       }
       S.sel.delete(name);
       await loadOverview();
     } catch (err) {
-      toast((act === 'test' ? '重登失败: ' : '') + err.message, 'err');
+      toast((act === 'test' ? 'Не удалось войти: ' : '') + err.message, 'err');
       btn.disabled = false; btn.textContent = label;
     }
   });
@@ -2237,13 +2279,13 @@ function bind() {
   $('#btnCfgSave').addEventListener('click', () => { saveConfigForm().catch(e => toast(e.message, 'err')); });
   $('#btnRefreshCredits').addEventListener('click', async () => {
     const btn = $('#btnRefreshCredits');
-    btn.disabled = true; btn.textContent = '读取中…';
+    btn.disabled = true; btn.textContent = 'Чтение…';
     try {
       await api('/panel/api/credits/refresh', { method: 'POST' });
       await loadOverview();
-      toast('余额已刷新', 'ok');
-    } catch (e) { toast('刷新失败: ' + e.message, 'err'); }
-    finally { btn.disabled = false; btn.textContent = '刷新余额'; }
+      toast('Баланс обновлён', 'ok');
+    } catch (e) { toast('Не удалось обновить: ' + e.message, 'err'); }
+    finally { btn.disabled = false; btn.textContent = 'Обновить баланс'; }
   });
 
   $('#btnImport').addEventListener('click', () => {
@@ -2270,7 +2312,7 @@ function bind() {
       $$('.tabs button').forEach(x => x.classList.toggle('on', x.dataset.tab === 'paste'));
       ['paste', 'file', 'single'].forEach(t => { $('#tab-' + t).hidden = t !== 'paste'; });
       importPreview();
-      hint('已读取 ' + f.name + '，确认内容后点「开始导入」', true);
+      hint('Файл прочитан: ' + f.name + '. Проверьте данные и нажмите «Добавить».', true);
     };
     rd.readAsText(f);
   });
@@ -2346,22 +2388,22 @@ function bind() {
   // 请求表：点账号下面的 chat_id 复制完整值 —— 生图超时后要拿它去上游会话历史取回产物。
   $('#reqBody').addEventListener('click', e => {
     const el = e.target.closest('[data-copy]');
-    if (el) copyText(el.dataset.copy, 'chat_id 已复制');
+    if (el) copyText(el.dataset.copy, 'chat_id Скопировано');
   });
   $('#reqAuto').addEventListener('change', e => { LOGS.auto = e.target.checked; });
   $('#btnReqReload').addEventListener('click', () => {
-    loadRequests().catch(err => toast('刷新失败: ' + err.message, 'err'));
+    loadRequests().catch(err => toast('Не удалось обновить: ' + err.message, 'err'));
   });
   $('#btnReqCopy').addEventListener('click', () => {
     const rows = LOGS.reqs || [];
-    if (!rows.length) { toast('没有可复制的行', 'err'); return; }
-    const head = ['时间', '路径', '模型', '账号', '上游会话id', '状态', 'tok入', 'tok出', '首字节ms', '耗时ms', '来源IP', '出口IP', '说明', '请求ID'];
+    if (!rows.length) { toast('Нет строк для копирования', 'err'); return; }
+    const head = ['Время', 'Путь', 'Модель', 'Аккаунт', 'ID диалога', 'Состояние', 'Токены входа', 'Токены выхода', 'Первый байтms', 'Длительностьms', 'IP клиента', 'Исходящий IP', 'Подробности', 'ЗапросыID'];
     const body = rows.map(r => [
       r.time, r.path, r.model, r.account, r.chat_id || '', r.status, r.prompt_tokens || 0, r.output_tokens || 0,
       r.first_byte_ms || 0, r.duration_ms || 0, r.client_ip || '', r.egress_ip || '',
       (r.error || r.degraded || ''), r.id || '',
     ].join('\t'));
-    copyText([head.join('\t')].concat(body).join('\n'), '已复制 ' + rows.length + ' 条');
+    copyText([head.join('\t')].concat(body).join('\n'), 'Скопировано ' + rows.length + ' записей');
   });
   $('#runChips').addEventListener('click', e => {
     const b = e.target.closest('[data-ch]');
@@ -2379,12 +2421,12 @@ function bind() {
     if (LOGS.pin) renderRunLog();
   });
   $('#btnRunReload').addEventListener('click', () => {
-    loadRunLog().catch(err => toast('刷新失败: ' + err.message, 'err'));
+    loadRunLog().catch(err => toast('Не удалось обновить: ' + err.message, 'err'));
   });
   $('#btnRunCopy').addEventListener('click', () => {
     const rows = runFiltered();
-    if (!rows.length) { toast('没有可复制的行', 'err'); return; }
-    copyText(rows.map(l => l.text).join('\n'), '已复制 ' + rows.length + ' 行');
+    if (!rows.length) { toast('Нет строк для копирования', 'err'); return; }
+    copyText(rows.map(l => l.text).join('\n'), 'Скопировано ' + rows.length + ' строк');
   });
 
   // ---- 前门令牌 ----
@@ -2397,16 +2439,16 @@ function bind() {
       if (KEYS.shown.has(k)) KEYS.shown.delete(k); else KEYS.shown.add(k);
       renderKeys();
     } else if (btn.dataset.act === 'copy') {
-      copyText(k, 'Key 已复制');
+      copyText(k, 'Key Скопировано');
     } else if (btn.dataset.act === 'del') {
-      if (!confirm('撤销这把 key？\n\n用它的客户端会立刻 401，且无法恢复（只能重新生成）。')) return;
+      if (!confirm('Отозвать ключ? Клиенты с этим ключом потеряют доступ.')) return;
       try {
         await api('/panel/api/keys/delete', { method: 'POST', body: JSON.stringify({ key: k }) });
         KEYS.shown.delete(k);
-        toast('已撤销', 'ok');
+        toast('Ключ отозван', 'ok');
         await loadKeys();
         await loadOverview();
-      } catch (err) { toast('撤销失败: ' + err.message, 'err'); }
+      } catch (err) { toast('Не удалось отозвать: ' + err.message, 'err'); }
     }
   });
   $('#btnKeyNew').addEventListener('click', () => {
@@ -2415,17 +2457,17 @@ function bind() {
     $('#newKeyOut').hidden = true;
     $('#newKeyCopyWrap').hidden = true;
     $('#newKeyNote').value = '';
-    $('#newKeyGo').textContent = '生成';
+    $('#newKeyGo').textContent = 'Создать';
     setTimeout(() => $('#newKeyNote').focus(), 30);
   });
   $('#newKeyClose').addEventListener('click', () => { $('#newKeyVeil').hidden = true; });
   $('#newKeyVeil').addEventListener('click', e => { if (e.target.id === 'newKeyVeil') $('#newKeyVeil').hidden = true; });
-  $('#newKeyCopy').addEventListener('click', () => copyText($('#newKeyOut').textContent, 'Key 已复制'));
+  $('#newKeyCopy').addEventListener('click', () => copyText($('#newKeyOut').textContent, 'Key Скопировано'));
   $('#newKeyGo').addEventListener('click', async () => {
     const btn = $('#newKeyGo');
     btn.disabled = true;
     const label = btn.textContent;
-    btn.textContent = '生成中…';
+    btn.textContent = 'Создание…';
     try {
       const d = await api('/panel/api/keys', {
         method: 'POST',
@@ -2437,15 +2479,15 @@ function bind() {
       $('#newKeyCopyWrap').hidden = false;
       const h = $('#newKeyHint');
       h.className = 'state ok';
-      h.textContent = '已生成并立即生效（已写入托管文件）。这串就是调用模型用的 token，点「复制这串 key」保存。';
+      h.textContent = 'Ключ создан и уже действует. Скопируйте его для клиента API.';
       h.hidden = false;
-      btn.textContent = '再生成一把';
+      btn.textContent = 'Создать ещё один';
       await loadKeys();
       await loadOverview();
     } catch (e) {
       const h = $('#newKeyHint');
       h.className = 'state err';
-      h.textContent = '生成失败：' + e.message;
+      h.textContent = 'Не удалось создать ключ:' + e.message;
       h.hidden = false;
       btn.textContent = label;
     } finally {
@@ -2465,6 +2507,12 @@ function bind() {
 /* ═══════════════ 启动 ═══════════════ */
 (async function boot() {
   bind();
+  fetch('/healthz').then(r=>r.json()).then(d=>{
+    if(d.status==='offline'){
+      $('#offlineNotice').hidden=false;
+      for(const id of ['importGo','dbgSend','btnRefreshCredits']){const b=document.getElementById(id);if(b)b.disabled=true}
+    }
+  }).catch(()=>{});
   // 深链 ?key=…：先拿它换会话（换完就从地址栏抹掉），换不到才退回本地存储。
   const urlKey = new URLSearchParams(location.search).get('key');
   if (urlKey) {
@@ -2509,7 +2557,7 @@ function bind() {
     await loadOverview();
   } catch (e) {
     if (e.message !== 'unauthorized') {
-      $('#navState').textContent = '连接失败';
+      $('#navState').textContent = 'Нет соединения';
       $('#navPulse').className = 'pulse bad';
     }
     return;

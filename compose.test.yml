@@ -1,0 +1,7 @@
+name: ru-qwen2api
+services:
+  test-local:
+    build:
+      context: .
+      target: test-local
+    image: ru-qwen2api:local-tests

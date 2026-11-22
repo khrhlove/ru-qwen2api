@@ -118,7 +118,10 @@ func main() {
 	up := upstream.New(cfg.Upstream)
 	// 启动时把账号"点亮"：只有密码的走 signin，有 token 的探测凭据形态。
 	// 这两步都是一次只读请求，换来的是"第一个用户请求不用替我们试错"。
-	bootstrapAccounts(cfg, pool, up)
+	offline := os.Getenv("QWEN2API_OFFLINE") == "1"
+	if !offline {
+		bootstrapAccounts(cfg, pool, up)
+	}
 	reqLog := reqlog.New(500)
 	// 请求流水行同样镜一份进运行日志：面板「日志」页把"谁打了什么"与进程日志放在一屏里。
 	reqLog.Out = io.MultiWriter(os.Stdout, runLog)
@@ -134,11 +137,17 @@ func main() {
 	// 单独起 goroutine：它不该影响启动，也不该拖慢任何请求。
 	kaCtx, kaCancel := context.WithCancel(context.Background())
 	defer kaCancel()
-	go srv.KeepAlive(kaCtx)
+	var handler http.Handler
+	if offline {
+		handler = offlinePanel(panel.New(offlineBackend{srv}))
+	} else {
+		go srv.KeepAlive(kaCtx)
+		handler = srv.Handler()
+	}
 
 	httpSrv := &http.Server{
 		Addr:    cfg.Listen,
-		Handler: srv.Handler(),
+		Handler: handler,
 		// 流式响应可能持续数分钟：只限读头/读体，不限写。
 		ReadHeaderTimeout: 20 * time.Second,
 		ReadTimeout:       5 * time.Minute,
