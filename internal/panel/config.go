@@ -36,7 +36,7 @@ func (p *Panel) handleConfigGet(w http.ResponseWriter, r *http.Request) {
 func (p *Panel) handleConfigSave(w http.ResponseWriter, r *http.Request) {
 	if p.b.ConfigPath() == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{
-			"error": "启动时没指定配置文件（-config），面板只能查看不能修改",
+			"error": "Файл настроек не задан при запуске. Параметры доступны только для чтения.",
 		})
 		return
 	}
@@ -44,11 +44,11 @@ func (p *Panel) handleConfigSave(w http.ResponseWriter, r *http.Request) {
 		Patch map[string]any `json:"patch"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "请求体解析失败：" + err.Error()})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Неверный формат тела запроса: " + err.Error()})
 		return
 	}
 	if len(body.Patch) == 0 {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "没有要保存的改动"})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Нет изменений для сохранения"})
 		return
 	}
 

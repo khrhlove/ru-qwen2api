@@ -258,7 +258,7 @@ func (c *Client) SubmitVideo(ctx context.Context, cred string, body SubmitBody) 
 	// "没有 task_id"这句废话，分不清是积分不足、模型不支持还是形态又变了。
 	// 原始响应进日志：形态一变，错误信息里能塞的信息总是不够，
 	// 而日志里留着全文就能直接对新形态。2026-10-29 实测踩过这一条。
-	log.Printf("[qwen2api] 视频提交无 task_id，上游原始响应（前 600 字符）: %s",
+	log.Printf("[qwen2api] Qwen не вернул идентификатор видеозадачи. Начало ответа: %s",
 		truncate(string(payload), 600))
 	hint := ""
 	// 注意吃的是 data（已剥掉 {success,data} 外壳），不是 payload。

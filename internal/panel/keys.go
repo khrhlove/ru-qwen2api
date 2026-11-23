@@ -38,7 +38,7 @@ func (p *Panel) handleKeys(w http.ResponseWriter, r *http.Request) {
 		"path":          p.b.APIKeysPath(),
 		"base_url":      publicBaseURL(r),
 		"auth_required": len(items) > 0,
-		"mask_hint":     "面板里显示的是完整 key；默认掩码只是防窥屏。",
+		"mask_hint":     "По умолчанию ключ скрыт. Нажмите «Показать», чтобы увидеть его полностью.",
 	})
 }
 
@@ -48,7 +48,7 @@ func (p *Panel) createKey(w http.ResponseWriter, r *http.Request) {
 		Note string `json:"note"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "请求体解析失败: " + err.Error()})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Неверный формат тела запроса: " + err.Error()})
 		return
 	}
 	k, err := p.b.AddAPIKey(body.Note)
@@ -69,7 +69,7 @@ func (p *Panel) deleteKey(w http.ResponseWriter, r *http.Request) {
 		Key string `json:"key"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "请求体解析失败"})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Неверный формат тела запроса"})
 		return
 	}
 	if err := p.b.DeleteAPIKey(body.Key); err != nil {

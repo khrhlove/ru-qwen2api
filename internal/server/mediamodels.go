@@ -41,7 +41,7 @@ func (s *Server) mediaModels() []ModelInfo {
 				"sizes": []string{"1:1", "4:3", "3:4", "16:9", "9:16"},
 				"max_n": 4,
 			},
-			Notes: "平衡质量与速度。按张计费（1 张 = 1 积分）；带 image 字段即图生图（也可用 /v1/images/edits）。",
+			Notes: "Одно изображение стоит один кредит. Для генерации по образцу передайте поле image или используйте /v1/images/edits.",
 		})
 	}
 
@@ -57,8 +57,8 @@ func (s *Server) mediaModels() []ModelInfo {
 			Endpoint: videoTaskPath,
 			Verified: true,
 			Params:   params,
-			Notes: "更自然稳定。火山方舟原生协议：POST " + videoTaskPath + " 只回 {id}，" +
-				"再 GET {id} 轮询 status；产物在 content.video_url（仅 succeeded 有值）。" +
+			Notes: "Создайте видеозадачу: POST " + videoTaskPath + " вернёт её идентификатор. " +
+				"Проверяйте статус запросом GET по идентификатору. При статусе succeeded ссылка появится в content.video_url. " +
 				videoPriceNote(s.conf().Video.Pricing),
 		})
 
@@ -89,8 +89,8 @@ func (s *Server) mediaModels() []ModelInfo {
 					Endpoint: videoTaskPath,
 					Verified: true,
 					Params:   s.videoModelParams(kernel),
-					Notes: "配置别名（video.aliases）→ 内核 " + canon +
-						"。产物由本网关的上游生成，不是 doubao 模型。" +
+					Notes: "Псевдоним из video.aliases для модели " + canon +
+						". Видео создаёт сервис Qwen, а не модель Doubao. " +
 						videoPriceNote(s.conf().Video.Pricing),
 				})
 			}
@@ -184,7 +184,7 @@ func videoTitle(id string) string {
 // 价格判断成本。表为空时明说"按个数限额"，而不是留一句空话。
 func videoPriceNote(pricing map[string]map[string]int) string {
 	if len(pricing) == 0 {
-		return "未配置 pricing，按每日个数限额。"
+		return "Цены не заданы: действует дневной лимит по количеству видео."
 	}
 	res := make([]string, 0, len(pricing))
 	for r := range pricing {
@@ -195,17 +195,17 @@ func videoPriceNote(pricing map[string]map[string]int) string {
 	// 取最小分辨率的"最短档"与最大分辨率的"最长档"：一头一尾最能代表价格区间。
 	parts := make([]string, 0, 2)
 	if d, c, ok := pickDuration(pricing[res[0]], false); ok {
-		parts = append(parts, fmt.Sprintf("%s %ds=%d", res[0], d, c))
+		parts = append(parts, fmt.Sprintf("%s, %d с — %d", res[0], d, c))
 	}
 	if len(res) > 1 {
 		if d, c, ok := pickDuration(pricing[res[len(res)-1]], true); ok {
-			parts = append(parts, fmt.Sprintf("%s %ds=%d", res[len(res)-1], d, c))
+			parts = append(parts, fmt.Sprintf("%s, %d с — %d", res[len(res)-1], d, c))
 		}
 	}
 	if len(parts) == 0 {
-		return "按档位扣积分，提交前校验账号余额。"
+		return "Стоимость зависит от параметров видео. Баланс проверяется до отправки задачи."
 	}
-	return "按档位扣积分（" + strings.Join(parts, " / ") + "），提交前校验账号余额。"
+	return "Стоимость в кредитах зависит от параметров (" + strings.Join(parts, " / ") + "). Баланс проверяется до отправки задачи."
 }
 
 // pickDuration 在 resolution→秒→积分 的小表里取最短（longest=false）或最长档。

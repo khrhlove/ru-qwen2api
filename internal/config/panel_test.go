@@ -114,3 +114,16 @@ func TestPanelPasswordFromEnv(t *testing.T) {
 		t.Fatal("应视为已启用")
 	}
 }
+
+func TestLocalPanelAccessFromEnv(t *testing.T) {
+	for _, value := range []string{"1", "0", "true"} {
+		t.Run(value, func(t *testing.T) {
+			t.Setenv("QWEN2API_PANEL_LOCAL_NO_AUTH", value)
+			c := Default()
+			applyEnv(&c)
+			if c.Panel.LocalNoAuth != (value == "1") {
+				t.Fatal("local panel access must require explicit value 1")
+			}
+		})
+	}
+}

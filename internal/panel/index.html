@@ -378,7 +378,7 @@ button.xs { white-space:nowrap; }
         <div class="stat"><div class="v" id="uStream">-</div><div class="k">Потоковые запросы</div></div>
       </div>
       <div class="box">
-        <header><h3>Prompt Cache</h3><span class="hint">Доля входных токенов из кэша за время работы шлюза. Пометка (est) означает оценку.</span></header>
+        <header><h3>Кэш запросов</h3><span class="hint">Доля входных токенов из кэша за время работы шлюза. Пометка (est) означает оценку.</span></header>
         <div class="stats" style="border:0;border-bottom:1px solid var(--line-soft)">
           <div class="stat good"><div class="v" id="uCacheHit">-</div><div class="k">Доля из кэша</div></div>
           <div class="stat"><div class="v" id="uCacheTokens">-</div><div class="k">Токены из кэша</div></div>
@@ -504,10 +504,10 @@ button.xs { white-space:nowrap; }
           <div class="chat-bar">
             <div class="row">
               <label class="sel-note">Модель<select id="dbgModel" style="min-width:210px"></select></label>
-              <label class="sel-note" data-for="text">Рассуждение<select id="dbgGear"><option value="fast">fast</option><option value="auto" selected>auto</option><option value="thinking">thinking</option></select></label>
-              <label class="sel-note" data-for="image">Формат кадра<select id="dbgSize"><option value="">По умолчанию</option><option value="1:1">1:1</option><option value="4:3">4:3</option><option value="3:4">3:4</option><option value="16:9">16:9</option><option value="9:16">9:16</option><option value="auto">auto</option></select></label>
+              <label class="sel-note" data-for="text">Рассуждение<select id="dbgGear"><option value="fast">Быстрый ответ</option><option value="auto" selected>Автоматически</option><option value="thinking">С рассуждением</option></select></label>
+              <label class="sel-note" data-for="image">Формат кадра<select id="dbgSize"><option value="">По умолчанию</option><option value="1:1">1:1</option><option value="4:3">4:3</option><option value="3:4">3:4</option><option value="16:9">16:9</option><option value="9:16">9:16</option><option value="auto">Автоматически</option></select></label>
               <label class="sel-note" data-for="image">Количество<select id="dbgN"><option>1</option><option>2</option><option>3</option><option>4</option></select></label>
-              <label class="sel-note" data-for="image">Ответ<select id="dbgFmt"><option value="url">url</option><option value="b64_json">b64_json</option></select></label>
+              <label class="sel-note" data-for="image">Ответ<select id="dbgFmt"><option value="url">Ссылка</option><option value="b64_json">Данные Base64</option></select></label>
               <label class="sel-note" data-for="image"><button class="xs ghost" id="dbgPick" type="button">Референсы</button><span class="note" id="dbgRefName">0 / 20</span><button class="xs ghost" id="dbgRefClear" type="button" title="Очистить референсы" hidden>×</button></label>
               <label class="sel-note" data-for="video">Формат кадра<select id="dbgVSize"><option>16:9</option><option>9:16</option><option>1:1</option></select></label>
               <label class="sel-note" data-for="video">Разрешение<select id="dbgRes"><option>720P</option><option>1080P</option></select></label>
@@ -571,15 +571,15 @@ button.xs { white-space:nowrap; }
       </div>
       <div class="box">
         <header><h3>Цена видео в кредитах</h3><span class="hint">Тарифы happyhorse11 и версии 1.0 различаются.</span></header>
-        <div class="pad"><table><thead><tr><th>Вариант</th><th class="num">5s</th><th class="num">10s</th><th class="num">15s</th></tr></thead><tbody id="cfgPricing"></tbody></table></div>
+        <div class="pad"><table><thead><tr><th>Вариант</th><th class="num">5 с</th><th class="num">10 с</th><th class="num">15 с</th></tr></thead><tbody id="cfgPricing"></tbody></table></div>
       </div>
       <div class="box">
         <header><h3>Хранение аккаунтов</h3></header>
         <div class="pad">
           <div class="state ok" id="cfgAccountsSrc">-</div>
           <div class="hint" style="margin-top:8px">
-            Изменения сохраняются в <span class="mono" id="cfgAccountsPath">accounts.json</span>；
-            . Этот файл<b>заменяет</b> список accounts в config.json.
+            Изменения сохраняются в <span class="mono" id="cfgAccountsPath">accounts.json</span>.
+            Этот файл <b>заменяет</b> список accounts в config.json.
             Чтобы снова использовать config.json, удалите файл списка и перезапустите шлюз.
           </div>
         </div>
@@ -601,7 +601,7 @@ button.xs { white-space:nowrap; }
 
       <div id="tab-paste">
         <div class="field">
-          <label>Один аккаунт на строку:<b>почта пароль [название] [заметка]</b>. Разделители: пробел, запятая, вертикальная черта или табуляция. Поддерживается JSON.</label>
+          <label>Один аккаунт на строку: <b>почта пароль [название] [заметка]</b>. Разделители: пробел, запятая, вертикальная черта или табуляция. Поддерживается JSON.</label>
           <textarea id="pasteBox" rows="9" placeholder="zhang@example.com Пароль main Основной
 li@example.com,Пароль2
 wang@example.com|Пароль3|Резервный"></textarea>
@@ -660,7 +660,7 @@ wang@example.com|Пароль3|Резервный"></textarea>
       <div id="authKey">
         <div class="field">
           <label>Ключ панели</label>
-          <input id="keyInput" type="password" placeholder="sk-…（config.panel.key）" autocomplete="off">
+          <input id="keyInput" type="password" placeholder="sk-… (config.panel.key)" autocomplete="off">
         </div>
         <div class="hint" style="margin-top:6px">Введите локальный ключ панели. После входа браузер использует сессию HttpOnly.</div>
       </div>
@@ -686,7 +686,7 @@ const KEY_STORE = 'qwen2api_key';
 const THEME_STORE = 'qwen2api_theme';
 const key = () => localStorage.getItem(KEY_STORE) || '';
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const num = n => (n == null || n === '') ? '-' : Number(n).toLocaleString('en-US');
+const num = n => (n == null || n === '') ? '-' : Number(n).toLocaleString('ru-RU');
 const pct = (a, b) => b > 0 ? Math.min(100, Math.round(a / b * 100)) : 0;
 // fmtSessionHours 会话时长的人话形态：720 → "30 дн. (720 ч)"。
 const fmtSessionHours = h => (h > 0 && h % 24 === 0) ? (h / 24) + ' дн. (' + h + ' ч)' : (h || 0) + ' ч';
@@ -869,7 +869,7 @@ async function loadOverview() {
   $('#navVer').textContent = 'v' + (d.version || '-');
   $('#navUp').textContent = fmtUp(d.uptime_s);
   const ps = d.pool_stats || {};
-  $('#subMeta').textContent = (ps.total || 0) + ' Аккаунт · ' + ((d.stats && d.stats.total) || 0) + ' запросов · Работает ' + fmtUp(d.uptime_s);
+  $('#subMeta').textContent = (ps.total || 0) + ' аккаунтов · ' + ((d.stats && d.stats.total) || 0) + ' запросов · Работает ' + fmtUp(d.uptime_s);
   renderCurrent();
   // 账号列表是分页取的：汇总刷新后顺带拉当前页（页面不在账号视图就不拉）。
   if (S.view === 'accounts') loadAccounts(S.page).catch(() => {});
@@ -883,15 +883,15 @@ async function loadOverview() {
 
 function fmtUp(s) {
   s = s || 0;
-  if (s < 60) return s + 's';
-  if (s < 3600) return Math.floor(s / 60) + 'm';
-  if (s < 86400) return Math.floor(s / 3600) + 'h' + Math.floor(s % 3600 / 60) + 'm';
-  return Math.floor(s / 86400) + 'd' + Math.floor(s % 86400 / 3600) + 'h';
+  if (s < 60) return s + ' с';
+  if (s < 3600) return Math.floor(s / 60) + ' мин ';
+  if (s < 86400) return Math.floor(s / 3600) + ' ч ' + Math.floor(s % 3600 / 60) + ' мин ';
+  return Math.floor(s / 86400) + ' дн. ' + Math.floor(s % 86400 / 3600) + ' ч ';
 }
 function fmtDur(s) {
   s = Math.max(0, s | 0);
-  if (s < 60) return s + 's';
-  return Math.floor(s / 60) + 'm' + String(s % 60).padStart(2, '0') + 's';
+  if (s < 60) return s + ' с';
+  return Math.floor(s / 60) + ' мин ' + String(s % 60).padStart(2, '0') + ' с';
 }
 function fmtTime(iso) {
   if (!iso) return '-';
@@ -950,7 +950,7 @@ function renderAccounts() {
   $('#sVidLeft').textContent = st.credits_known ? num(st.vid_left) : '-';
   $('#accNote').textContent = !st.total ? ''
     : (!st.credits_known ? 'Баланс не получен. Нажмите «Обновить баланс».'
-      : (st.credits_known < st.total ? '（' + (st.total - st.credits_known) + ' без данных о балансе)' : ''));
+      : (st.credits_known < st.total ? '(' + (st.total - st.credits_known) + ' без данных о балансе)' : ''));
 
   const chips = [
     ['all', 'Все', st.total || 0],
@@ -981,7 +981,7 @@ function renderAccounts() {
   const size = (d && d.size) || S.size || 50;
   const start = ((d && d.page) || 1) - 1;
   $('#accPageInfo').textContent = total
-    ? `Строка ${start * size + 1}–${start * size + items.length} / ${total}` : 'Аккаунтов по этому фильтру нет.';
+    ? `Строки ${start * size + 1}–${start * size + items.length} / ${total}` : 'Аккаунтов по этому фильтру нет.';
   $('#accPageNum').textContent = ((d && d.page) || 1) + ' / ' + pages;
   $('#accPrev').disabled = !d || d.page <= 1;
   $('#accNext').disabled = !d || d.page >= pages;
@@ -999,11 +999,11 @@ function renderAccounts() {
     // 有效标绿、剩不到 2 分钟标黄（选号按 >2 分钟算"热"，黄的就是边界）、过期标红。
     const tk = !a.token_known ? '<span class="hint">Неизвестно</span>'
       : (a.token_left_s <= 0 ? '<span class="tag bad">Истёк</span>'
-        : (a.token_left_s <= 120 ? `<span class="tag warn">${a.token_left_s}s</span>`
-          : `<span class="tag ok">${Math.floor(a.token_left_s / 60)}m</span>`));
+        : (a.token_left_s <= 120 ? `<span class="tag warn">${a.token_left_s} с</span>`
+          : `<span class="tag ok">${Math.floor(a.token_left_s / 60)} мин</span>`));
     // 悬停看 refresh_token 还剩几天（30 дн.保养一次，不足 3 дн.标黄）。
-    const rtLeft = !a.refresh_known ? 'refresh_token Неизвестно'
-      : ('До истечения refresh_token: ' + Math.max(0, Math.floor(a.refresh_left_s / 86400)) + ' дн.'
+    const rtLeft = !a.refresh_known ? 'Срок действия токена обновления неизвестен'
+      : ('До истечения токена обновления: ' + Math.max(0, Math.floor(a.refresh_left_s / 86400)) + ' дн.'
          + (a.refresh_left_s < 3 * 86400 ? ' (скоро истечёт)' : ''));
     return `<tr data-name="${esc(a.name)}">
       <td class="c-chk"><input type="checkbox" class="rowchk" ${S.sel.has(a.name) ? 'checked' : ''} style="width:auto"></td>
@@ -1034,7 +1034,7 @@ function renderBulk() {
     bar = document.createElement('div');
     bar.id = 'bulkbar';
     bar.className = 'bulkbar';
-    bar.innerHTML = '<span class="cnt"></span><button class="xs" data-bulk="reset">Сбросить состояние</button><button class="xs danger" data-bulk="del">Удалить</button><button class="xs ghost" data-bulk="clear">取消</button>';
+    bar.innerHTML = '<span class="cnt"></span><button class="xs" data-bulk="reset">Сбросить состояние</button><button class="xs danger" data-bulk="del">Удалить</button><button class="xs ghost" data-bulk="clear">Снять выделение</button>';
     document.body.appendChild(bar);
     bar.addEventListener('click', async e => {
       const b = e.target.closest('[data-bulk]');
@@ -1051,7 +1051,7 @@ function renderBulk() {
           ok++;
         } catch (err) { fail++; }
       }
-      toast(`${act === 'del' ? 'Удалить' : 'Сбросить'}Готово：Успешно ${ok}${fail ? '，Ошибка ' + fail : ''}`, fail ? 'err' : 'ok');
+      toast(`${act === 'del' ? 'Удалено' : 'Сброшено'}: ${ok}${fail ? ', ошибок: ' + fail : ''}`, fail ? 'err' : 'ok');
       S.sel.clear();
       await loadOverview();
     });
@@ -1067,7 +1067,7 @@ function renderUsage() {
   $('#uOk').textContent = num(st.ok || 0);
   $('#uFail').textContent = num(st.failed || 0);
   $('#uTokens').textContent = num(st.tokens_total || 0);
-  $('#uLatency').textContent = st.avg_duration_ms ? (st.avg_duration_ms + 'ms') : '-';
+  $('#uLatency').textContent = st.avg_duration_ms ? (st.avg_duration_ms + ' мс') : '-';
   $('#uStream').textContent = num(st.streaming || 0);
 
   const byModel = st.by_model || {}, byAccount = st.by_account || {};
@@ -1078,7 +1078,7 @@ function renderUsage() {
   $('#byModelBody').innerHTML = mk.length ? mk.map(([k, v]) => row(k, v, mmax)).join('') : '<tr><td class="hint">Пока нет данных</td></tr>';
   $('#byAccountBody').innerHTML = ak.length ? ak.map(([k, v]) => row(k, v, amax)).join('') : '<tr><td class="hint">Пока нет данных</td></tr>';
 
-  // ── Prompt Cache 看板 ──
+  // ── Кэш запросов 看板 ──
   // 口径是 token 维度，不是请求维度：一个 20k prompt 命中一次，
   // 抵得上几百次 1k 的小请求，按请求数算会严重低估收益。
   const c = st.cache || {};
@@ -1166,7 +1166,7 @@ function dailyTitle(a) {
 function mediaTag(media) {
   const v = media || 'text';
   const cls = v === 'image' ? 'ok' : v === 'video' ? 'warn' : 'muted';
-  return `<span class="tag ${cls}">${esc(v)}</span>`;
+  return `<span class="tag ${cls}">${esc(({text:"Текст",image:"Изображение",video:"Видео"})[v] || v)}</span>`;
 }
 async function renderModels() {
   if (!S.models) {
@@ -1182,8 +1182,8 @@ async function renderModels() {
     const spec = [];
     const p = m.params || {};
     if (p.resolutions) spec.push('Разрешение ' + p.resolutions.join('/'));
-    if (p.durations) spec.push('Длительность ' + p.durations.map(d => d + 's').join('/'));
-    if (p.sizes) spec.push('Формат кадра ' + p.sizes.join('/'));
+    if (p.durations) spec.push('Длительность ' + p.durations.map(d => d + ' с').join('/'));
+    if (p.sizes) spec.push('Формат кадра ' + p.sizes.map(optionRu).join('/'));
     // 生成模型必须走专用端点，把这个信息放在「能力」列最显眼的位置。
     const eps = m.endpoint ? `<span class="tag ok mono">${esc(m.endpoint)}</span>` : '';
     return `<tr>
@@ -1206,40 +1206,7 @@ function kv(k, v) { return `<div><div class="hint">${k}</div><div class="mono" s
    保存走 POST /panel/api/config → 写回 config.json 并**立即替换运行时快照**，
    所以账号池限额/冷却这类改完当场生效，不用重启。 */
 const CFG = { fields: [], values: {}, writable: false, loaded: false };
-const fieldRu={
-  default_model:['Модель по умолчанию','Используется, если клиент не передал model.'],
-  default_thinking:['Режим рассуждения','auto — автоматически, thinking — с рассуждением, fast — быстрый ответ.'],
-  expose_reasoning:['Передавать рассуждение','Добавляет reasoning_content в ответ.'],
-  image_model:['Модель изображений','Пустое значение оставляет модель на выбор Qwen.'],
-  image_timeout_s:['Время ожидания изображения, с','Лимит одной попытки генерации.'],
-  model_aliases:['Псевдонимы текстовых моделей','Формат: название клиента=модель Qwen, по одной паре на строку.'],
-  blob_base_url:['Адрес хранилища изображений','Qwen должен иметь доступ к этому адресу, чтобы получить вложение.'],
-  'upstream.egress_ip_url':['Адрес проверки исходящего IP','Значение «-» отключает проверку.'],
-  'upstream.timeout_s':['Время ожидания ответа Qwen, с','Для изменения тайм-аута нужен перезапуск.'],
-  'pool.max_rotate':['Лимит попыток смены аккаунта','Для одного запроса.'],
-  'pool.cooldown_soft_s':['Пауза после ограничения, с','После временного ограничения запросов.'],
-  'pool.cooldown_auth_s':['Пауза после ошибки входа, с','После ответов 401 и 403.'],
-  'pool.max_inflight_per_account':['Одновременных запросов на аккаунт','Лимит запросов в работе.'],
-  'pool.max_image_per_day':['Изображений в день','На один аккаунт. 0 — без локального ограничения.'],
-  'pool.max_video_per_day':['Видеозадач в день','Используется, если не заданы цены в кредитах.'],
-  'pool.max_video_credits_per_day':['Кредитов на видео в день','На один аккаунт. 0 — учитывать фактический баланс.'],
-  'pool.warm_chats_per_account':['Подготовленных диалогов на аккаунт','0 — не создавать диалоги заранее.'],
-  'pool.chat_pool_ttl_s':['Срок подготовленного диалога, с','По истечении срока шлюз отбросит пустой диалог.'],
-  'pool.keepalive.tick_s':['Интервал обслуживания, с','Проверка сессий и подготовленных соединений.'],
-  'pool.keepalive.token_window_s':['Обновлять сессию за, с','Укажите больше интервала обслуживания.'],
-  'pool.keepalive.conc_factor':['Коэффициент подготовки','Определяет число соединений по пиковой нагрузке.'],
-  'pool.keepalive.adopt_batch':['Обновлений токена за проход','Верхний предел для одного прохода.'],
-  'pool.keepalive.adopt_per_min':['Обновлений токена в минуту','Ограничивает частоту фоновых входов.'],
-  'pool.keepalive.parallel':['Параллельные проверки','Число одновременно обслуживаемых аккаунтов.'],
-  'pool.keepalive.batch_max':['Аккаунтов за проход','Верхний предел для одного цикла обслуживания.'],
-  'pool.keepalive.target_max':['Максимум подготовленных аккаунтов','Верхний предел при росте нагрузки.'],
-  'pool.keepalive.hot_rotate_s':['Интервал смены активной группы, с','0 — отключить плановую смену.'],
-  'video.root_model':['Модель видео','Идентификатор модели на стороне Qwen.'],
-  'video.resolution':['Разрешение видео','Используется, если клиент не задал разрешение.'],
-  'video.duration':['Длительность видео, с','Поддерживаются 5, 10 и 15 секунд.'],
-  'video.size':['Формат видео','Например, 16:9, 1:1 или 9:16.'],
-  'video.aliases':['Псевдонимы моделей видео','Формат: название клиента=модель Qwen.']
-};
+const optionRu = v => ({auto:"Автоматически", fast:"Быстрый ответ", thinking:"С рассуждением", adaptive:"Адаптивный"})[v] || v;
 
 function cfgGroupOf(key) {
   if (key.indexOf('pool.') === 0) return 'pool';
@@ -1268,7 +1235,7 @@ function parseKV(text) {
     const k = s.slice(0, p).trim();
     const v = s.slice(p + 1).trim();
     if (!k) return { err: 'Строка ' + (i + 1) + ': укажите название' };
-    if (!v) return { err: 'Строка ' + (i + 1) + ': укажите модель (' + k + '=?）' };
+    if (!v) return { err: 'Строка ' + (i + 1) + ': укажите модель (' + k + '=?)' };
     obj[k] = v;
   }
   return { obj: obj };
@@ -1287,7 +1254,7 @@ function cfgInput(f, v) {
   if (f.type === 'enum') {
     return '<select ' + attrs + '>' + (f.enum || []).map(e =>
       '<option value="' + esc(e) + '"' + (String(v) === e ? ' selected' : '') + '>'
-      + esc(e) + '</option>').join('') + '</select>';
+      + esc(optionRu(e)) + '</option>').join('') + '</select>';
   }
   if (f.type === 'int') {
     return '<input ' + attrs + ' type="number" min="' + (f.min || 0) + '" max="' + (f.max || 0)
@@ -1307,12 +1274,12 @@ function renderConfigForm() {
     return '<div style="margin-bottom:14px">'
       + '<div class="hint" style="margin:0 0 8px;font-weight:600">' + g[1] + '</div>'
       + '<div style="display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(240px,1fr))">'
-      + fs.map(f => '<div class="field"' + (f.type === 'kv' ? ' style="grid-column:1/-1"' : '') + '><label>' + esc(fieldRu[f.key]?.[0]||f.key)
+      + fs.map(f => '<div class="field"' + (f.type === 'kv' ? ' style="grid-column:1/-1"' : '') + '><label>' + esc(f.label || f.key)
         + (f.hot ? '' : ' <span class="tag warn">Нужен перезапуск</span>')
         + '</label>'
         // 把 disabled 插到标签名的第一个 '>' 前：对 input/select 都成立
         + cfgInput(f, CFG.values[f.key]).replace('>', dis + '>')
-        + '<div class="hint">' + esc(fieldRu[f.key]?.[1] || f.key) + '</div></div>').join('')
+        + '<div class="hint">' + esc(f.hint || f.key) + '</div></div>').join('')
       + '</div></div>';
   }).join('');
   $('#btnCfgSave').disabled = !CFG.writable;
@@ -1388,31 +1355,31 @@ async function saveConfigForm() {
 function renderConfig() {
   const c = S.ov.config || {};
   loadConfigForm(false).catch(() => {});
-  $('#cfgVer').textContent = 'v' + (S.ov.version || '-') + ' · uptime ' + fmtUp(S.ov.uptime_s);
+  $('#cfgVer').textContent = 'v' + (S.ov.version || '-') + ' · Время работы: ' + fmtUp(S.ov.uptime_s);
   $('#cfgService').innerHTML = [
     kv('Адрес сервера', esc(c.listen || '-')),
     kv('Модель по умолчанию', esc(c.default_model || '-')),
-    kv('Режим рассуждения', esc(c.default_thinking || '-')),
-    kv('API Key', c.api_key_required
+    kv('Режим рассуждения', esc(optionRu(c.default_thinking) || '-')),
+    kv('Ключ API', c.api_key_required
       ? '<span class="tag ok">Ключей: ' + (c.api_keys_count || 1) + '</span>' + (c.api_keys_managed ? ' <span class="tag muted">Управление в панели</span>' : '')
       : '<span class="tag bad">Выключено</span>'),
     // 面板登录形态：密钥（panel.key）/ API Key 回落 / 可选账密 —— 只显示有没有配，不回显值。
-    kv('Вход в панель', (c.panel && c.panel.key_set ? '<span class="tag ok">Ключ панели</span>' : '<span class="tag muted">Ключ API</span>')
+    kv('Вход в панель', c.panel?.local_no_auth ? 'Без ключа (локально)' : (c.panel && c.panel.key_set ? '<span class="tag ok">Ключ панели</span>' : '<span class="tag muted">Ключ API</span>')
       + (c.panel && c.panel.password_enabled ? ' <span class="tag muted">+ пароль</span>' : '')),
-    kv('Срок сессии', fmtSessionHours((c.panel && c.panel.session_hours) || 720)),
+    kv('Срок сессии', c.panel?.local_no_auth ? 'Без входа' : fmtSessionHours((c.panel && c.panel.session_hours) || 720)),
     kv('Передавать рассуждение', c.reasoning ? 'Включено' : 'Выключено'),
   ].join('');
   const u = c.upstream || {};
   $('#cfgUpstream').innerHTML = [
     kv('Домен чата', esc(u.base_url || '-')),
     kv('Версия клиента', esc(u.version || '-')),
-    kv('Тайм-аут запроса', (u.timeout_s || '-') + 's'),
+    kv('Тайм-аут запроса', (u.timeout_s || '-') + ' с'),
     kv('Домен баланса', esc(c.entitlement_base_url || '-')),
   ].join('');
   const p = c.pool || {};
   $('#cfgPool').innerHTML = [
     kv('Попыток смены аккаунта', p.max_rotate),
-    kv('Пауза при лимите / ошибке входа', (p.cooldown_soft_s || 0) + 's / ' + (p.cooldown_auth_s || 0) + 's'),
+    kv('Пауза при лимите / ошибке входа', (p.cooldown_soft_s || 0) + ' с / ' + (p.cooldown_auth_s || 0) + ' с'),
     kv('Запросов одновременно на аккаунт', p.max_inflight_per_account),
     kv('Изображений на аккаунт в день', p.max_image_per_day || 'Без ограничений'),
     kv('Видео на аккаунт в день', p.max_video_per_day || 'Без ограничений'),
@@ -1475,7 +1442,7 @@ function renderReqTable() {
   $('#reqBody').innerHTML = rows.length ? rows.map(r => {
     const code = r.status || 0;
     const [resLabel, cls] = resultOf(r);
-    const note = r.error || (r.degraded ? 'Ограничение: ' + r.degraded : '');
+    const note = r.error ? (errorSummary(code, r.error) || r.error) : (r.degraded ? 'Ограничение: ' + r.degraded : '');
     return `<tr title="${esc(r.id || '')} · ${esc(r.user_agent || '')}">
       <td class="note">${fmtTime(r.time)}</td>
       <td class="mono">${esc(r.path || '-')}</td>
@@ -1485,10 +1452,10 @@ function renderReqTable() {
         : ''}</td>
       <td><span class="tag ${cls}">${esc(resLabel)}</span>${r.stream ? ' <span class="tag muted">Поток</span>' : ''}</td>
       <td class="num">${r.prompt_tokens || 0} / ${r.output_tokens || 0}</td>
-      <td class="num">${r.first_byte_ms ? r.first_byte_ms + 'ms' : '-'}</td>
-      <td class="num">${r.duration_ms ? r.duration_ms + 'ms' : '-'}</td>
+      <td class="num">${r.first_byte_ms ? r.first_byte_ms + ' мс' : '-'}</td>
+      <td class="num">${r.duration_ms ? r.duration_ms + ' мс' : '-'}</td>
       <td class="note" title="Адрес клиента и исходящий IP шлюза">${esc(r.client_ip || '-')}${r.egress_ip ? '<br><span class="mono hint">Прокси ' + esc(r.egress_ip) + '</span>' : ''}</td>
-      <td class="note" title="${esc(note)}">${esc((note || '-').slice(0, 60))}</td>
+      <td class="note" title="${esc(r.error || note)}">${esc((note || '-').slice(0, 60))}</td>
     </tr>`;
   }).join('') : `<tr><td colspan="10" style="text-align:center;color:var(--ink-3);padding:26px">Нет подходящих запросов</td></tr>`;
 }
@@ -1702,7 +1669,7 @@ async function doImport() {
       <span class="why" title="${esc(r.error || '')}">${esc((r.error || '').slice(0, 80))}</span></div>`).join('');
     $('#importRes').innerHTML = rows || '<div class="row"><span class="em">Нет результатов</span></div>';
     $('#importRes').hidden = false;
-    const msg = `Добавлено: ${res.imported}, пропущено: ${res.skipped} (всего: ${res.total}）` + (res.persist_error ? '; ошибка сохранения: ' + res.persist_error : '');
+    const msg = `Добавлено: ${res.imported}, пропущено: ${res.skipped} (всего: ${res.total})` + (res.persist_error ? '; ошибка сохранения: ' + res.persist_error : '');
     hint(msg, res.ok);
     toast(msg, res.ok ? 'ok' : 'err');
     if (res.imported > 0) { $('#pasteBox').value = ''; await loadOverview(); }
@@ -1738,12 +1705,12 @@ function dbgNode(tag, cls, text) {
   return n;
 }
 
-// 请求/响应回显：长字符串（b64_json 动辄 8MB）必须折叠，否则一展开面板就卡死。
+// 请求/响应回显：长字符串（b64_json 动辄 8 МБ)必须折叠，否则一展开面板就卡死。
 function dbgJSON(v) {
   try {
     return JSON.stringify(v, (k, val) => {
       if (typeof val === 'string' && val.length > 600) {
-        return val.slice(0, 120) + '… (скрыто: ' + (val.length / 1048576).toFixed(2) + 'MB）';
+        return val.slice(0, 120) + '… (скрыто: ' + (val.length / 1048576).toFixed(2) + ' МБ)';
       }
       return val;
     }, 2);
@@ -1777,7 +1744,7 @@ function dbgNewTurn(prompt, media) {
       const im = dbgNode('img');
       im.src = r.dataURI;
       im.alt = r.name || ('Референсы ' + (i + 1));
-      im.title = 'Строка ' + (i + 1) + ' шт. · ' + (r.name || '');
+      im.title = 'Изображение №' + (i + 1) + ' · ' + (r.name || '');
       th.append(im);
     });
     ub.append(th);
@@ -1802,16 +1769,28 @@ function dbgNewTurn(prompt, media) {
 
 function dbgDone(turn) {
   turn.bub.classList.remove('pending');
-  turn.who.append(dbgNode('span', 'note', ' · ' + ((performance.now() - turn.t0) / 1000).toFixed(1) + 's'));
+  turn.who.append(dbgNode('span', 'note', ' · ' + ((performance.now() - turn.t0) / 1000).toFixed(1) + ' с'));
 }
 
+function errorSummary(status, text) {
+  if (/Model_Not_Found|model not found/i.test(text)) return 'Qwen не нашёл выбранную модель. Обновите каталог и выберите модель из списка.';
+  if (/insufficient_quota/i.test(text)) return 'Квоты аккаунта недостаточно для этого запроса.';
+  if (status === 401) return 'Сервис не принял данные для входа.';
+  if (status === 403) return 'Сервис отклонил запрос: доступ запрещён.';
+  if (status === 429) return 'Достигнут лимит запросов. Повторите попытку позже.';
+  if (/timeout|deadline exceeded/i.test(text)) return 'Время ожидания ответа истекло.';
+  if (/failed to fetch|networkerror|connection reset/i.test(text)) return 'Не удалось связаться с сервисом. Проверьте соединение.';
+  return '';
+}
 function dbgFail(turn, status, text) {
   turn.bub.classList.remove('pending');
   turn.who.append(dbgNode('span', 'pill bad', status ? 'HTTP ' + status : 'Ошибка'));
   turn.body.textContent = '';
-  const err = dbgNode('div', 'txt', text || 'Ошибка запроса');
+  const summary = errorSummary(status, text) || (text && !/^\s*[{[]/.test(text) && /[А-Яа-яЁё]/.test(text) ? text : 'Не удалось выполнить запрос.');
+  const err = dbgNode('div', 'txt', summary);
   err.style.color = 'var(--bad)';
   turn.bub.append(err);
+  if (text && text !== summary) turn.bub.append(dbgIO('Подробности ошибки', text));
 }
 
 // 带鉴权地取回媒体。密码登录走 cookie；Key 登录时 <img>/<video> 带不上 header，
@@ -1882,7 +1861,7 @@ async function dbgSendText(turn, model, prompt) {
 
   DBG.history.push({ role: 'user', content: prompt }, { role: 'assistant', content });
   const tail = raw.length >= 12000 ? '… (показан конец)\n' + raw.slice(-6000) : raw;
-  dbgSetResp(turn, 'Ответ (исходный SSE' + (usage ? ' · ' + (usage.total_tokens || '-') + ' tok' : '') + '）', tail);
+  dbgSetResp(turn, 'Ответ (исходный SSE' + (usage ? ' · ' + (usage.total_tokens || '-') + ' токенов' : '') + ')', tail);
 }
 
 /* ---- 图片 ---- */
@@ -1901,8 +1880,8 @@ async function dbgSendImage(turn, model, prompt) {
   if (echo.image) {
     const n = DBG.refs.length;
     const kb = Math.round(DBG.refs.reduce((s, r) => s + (r.bytes || 0), 0) / 1024);
-    echo.image = n > 1 ? ('（' + n + ' изобр., размер: ' + kb + 'KB）')
-                       : ('（data URI，' + kb + 'KB）');
+    echo.image = n > 1 ? ('(' + n + ' изобр., размер: ' + kb + ' КБ)')
+                       : ('(данные URI, ' + kb + ' КБ)');
   }
   turn.bub.append(dbgIO('Тело запроса', dbgJSON(echo)));
 
@@ -1940,7 +1919,7 @@ async function dbgSendImage(turn, model, prompt) {
 
   const resp = Object.assign({}, j, {
     data: (j.data || []).map(d => Object.assign({}, d, {
-      b64_json: d.b64_json ? '（' + Math.round(d.b64_json.length / 1024) + 'KB base64）' : undefined,
+      b64_json: d.b64_json ? '(' + Math.round(d.b64_json.length / 1024) + ' КБ в Base64)' : undefined,
     })),
   });
   dbgSetResp(turn, 'Ответ', dbgJSON(resp));
@@ -2013,14 +1992,14 @@ async function dbgSendVideo(turn, model, prompt) {
         a.style.marginTop = '7px';
         turn.body.append(a);
       }
-      dbgSetResp(turn, 'Ответ（Готово）', dbgJSON(pr));
+      dbgSetResp(turn, 'Ответ после завершения', dbgJSON(pr));
       return;
     }
     if (pr.status === 'failed') {
       pill.className = 'pill bad';
       pill.textContent = 'Ошибка';
       turn.bub.classList.remove('pending');
-      dbgSetResp(turn, 'Ответ（Ошибка）', dbgJSON(pr));
+      dbgSetResp(turn, 'Ответ с ошибкой', dbgJSON(pr));
       return;
     }
     // 上游不报百分比：进度条只表达「非终态」，不编数字。
@@ -2096,7 +2075,7 @@ function dbgPickRefs(files) {
   });
   if (!list.length) return;
   const take = list.slice(0, room);
-  if (list.length > room) toast('Добавлено: ' + room + ' шт. (лимит: ' + DBG_MAX_REFS + '）', 'err');
+  if (list.length > room) toast('Добавлено: ' + room + ' шт. (лимит: ' + DBG_MAX_REFS + ')', 'err');
 
   const slots = new Array(take.length).fill(null);
   let left = take.length;
@@ -2142,7 +2121,7 @@ function dbgRenderRefs() {
   const n = DBG.refs.length;
   const mb = DBG.refs.reduce((s, r) => s + (r.bytes || 0), 0) / 1048576;
   $('#dbgRefName').textContent = n
-    ? (n + ' шт. · ' + (mb < 0.1 ? '<0.1' : mb.toFixed(1)) + 'MB · в порядке добавления')
+    ? (n + ' шт. · ' + (mb < 0.1 ? '<0,1' : mb.toLocaleString('ru-RU', {maximumFractionDigits:1})) + ' МБ · в порядке добавления')
     : ('0 / ' + DBG_MAX_REFS);
   $('#dbgRefClear').hidden = !n;
   $('#dbgPick').textContent = n ? 'Добавить изображение' : 'Референсы';
@@ -2397,7 +2376,7 @@ function bind() {
   $('#btnReqCopy').addEventListener('click', () => {
     const rows = LOGS.reqs || [];
     if (!rows.length) { toast('Нет строк для копирования', 'err'); return; }
-    const head = ['Время', 'Путь', 'Модель', 'Аккаунт', 'ID диалога', 'Состояние', 'Токены входа', 'Токены выхода', 'Первый байтms', 'Длительностьms', 'IP клиента', 'Исходящий IP', 'Подробности', 'ЗапросыID'];
+    const head = ['Время', 'Путь', 'Модель', 'Аккаунт', 'ID диалога', 'Состояние', 'Токены входа', 'Токены выхода', 'Первый байт, мс', 'Длительность, мс', 'IP клиента', 'Исходящий IP', 'Подробности', 'ID запроса'];
     const body = rows.map(r => [
       r.time, r.path, r.model, r.account, r.chat_id || '', r.status, r.prompt_tokens || 0, r.output_tokens || 0,
       r.first_byte_ms || 0, r.duration_ms || 0, r.client_ip || '', r.egress_ip || '',

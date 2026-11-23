@@ -216,8 +216,8 @@ func (s *Server) noteCreditErr(name string, err error) {
 	}
 	s.creditErrMu.Unlock()
 	if shouldLog {
-		log.Printf("[qwen2api] 读取积分余额失败（%s）：%v —— 本次不做余额拦截，"+
-			"由上游 insufficient_quota 兜底", name, err)
+		log.Printf("[qwen2api] Не удалось получить баланс (%s): %v. "+
+			"Проверку квоты выполнит Qwen.", name, err)
 	}
 }
 

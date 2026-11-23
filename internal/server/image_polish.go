@@ -58,7 +58,7 @@ func (s *Server) polishImage(ctx context.Context, srcURL string) (string, []byte
 	if !st.IsEnabled() {
 		// 凭据不全：只在第一次打印，避免每张图刷屏
 		storageWarnOnce.Do(func() {
-			log.Printf("[qwen2api] 图片去水印未启用（storage 缺: %v），图片将透传上游直链",
+			log.Printf("[qwen2api] Обработка изображений отключена: не заданы параметры хранилища %v. Возвращаются ссылки Qwen",
 				st.MissingKeys())
 		})
 		return srcURL, nil, nil

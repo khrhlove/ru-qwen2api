@@ -170,8 +170,8 @@ func dropSessionTicket(name, token string) string {
 	if !upstream.LooksLikeSessionTicket(token) {
 		return token
 	}
-	log.Printf("[qwen2api] 账号 %s 的凭据是会话 JWT（exp 超过 1 小时），不是 access token："+
-		"已忽略，请用邮箱+密码重登", name)
+	log.Printf("[qwen2api] Аккаунт %s: получен JWT сессии вместо токена доступа. "+
+		"Войдите снова с почтой и паролем.", name)
 	return ""
 }
 

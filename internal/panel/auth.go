@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -190,6 +191,12 @@ func matchKey(token string, keys []string) bool {
 
 // authMethod 返回本次请求的凭据来源：key / session / open / ""（未通过）。
 func (p *Panel) authMethod(r *http.Request) string {
+	if p.b.Config().Panel.LocalNoAuth {
+		if localPanelRequest(r) {
+			return "local"
+		}
+		return ""
+	}
 	keys := p.keyStrings()
 	if p.apiKeyOK(r, keys) {
 		return "key"
@@ -210,10 +217,10 @@ func (p *Panel) handleSession(w http.ResponseWriter, r *http.Request) {
 	cfg := p.b.Config().Panel
 	method := p.authMethod(r)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"need_auth":        cfg.AuthEnabled() || len(p.keyStrings()) > 0,
-		"authed":           method != "",
-		"method":           method,
-		"username":         cfg.EffectiveUsername(),
+		"need_auth": !cfg.LocalNoAuth && (cfg.AuthEnabled() || len(p.keyStrings()) > 0),
+		"authed":    method != "",
+		"method":    method,
+		"username":  cfg.EffectiveUsername(),
 		// key_only 面板默认就是密钥登录；只有配了密码时才多一个"账密登录"入口。
 		"key_only":         !cfg.PasswordEnabled(),
 		"password_enabled": cfg.PasswordEnabled(),
@@ -222,18 +229,55 @@ func (p *Panel) handleSession(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// Docker rewrites the peer IP; validate Host rather than trusting forwarding
+// headers. Reject cross-origin browser requests even to the loopback address.
+func localPanelRequest(r *http.Request) bool {
+	host := r.Host
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	if host != "localhost" {
+		ip := net.ParseIP(strings.Trim(host, "[]"))
+		if ip == nil || !ip.IsLoopback() {
+			return false
+		}
+	}
+	// A sidebar link from Gemini uses a different port, so the browser marks
+	// its navigation same-site (or cross-site from an extension). Allow only
+	// top-level navigation to the static shell, never to a panel API.
+	if r.Method == http.MethodGet && (r.URL.Path == "/panel/" || r.URL.Path == "/panel") &&
+		r.Header.Get("Sec-Fetch-Mode") == "navigate" &&
+		r.Header.Get("Sec-Fetch-Dest") == "document" && r.Header.Get("Origin") == "" {
+		return true
+	}
+	if site := r.Header.Get("Sec-Fetch-Site"); site != "" && site != "same-origin" && site != "none" {
+		return false
+	}
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return r.Method == http.MethodGet || r.Method == http.MethodHead
+	}
+	u, err := url.Parse(origin)
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	return err == nil && u.Scheme == scheme && strings.EqualFold(u.Host, r.Host) &&
+		u.User == nil && u.Path == "" && u.RawQuery == "" && u.Fragment == ""
+}
+
 func (p *Panel) handleLogin(w http.ResponseWriter, r *http.Request) {
 	cfg := p.b.Config().Panel
 	keys := p.keyStrings()
 	if !cfg.AuthEnabled() && len(keys) == 0 {
 		writeJSON(w, http.StatusBadRequest, map[string]string{
-			"error": "未启用面板登录（config.panel.key / panel.password / api_keys 都为空）"})
+			"error": "Вход по ключу или паролю не настроен"})
 		return
 	}
 	ip := clientIP(r)
 	if p.throttled(ip) {
 		writeJSON(w, http.StatusTooManyRequests, map[string]string{
-			"error": "失败次数过多，请 10 分钟后再试（或改 config.panel.password 后重启）",
+			"error": "Слишком много попыток входа. Повторите через 10 минут.",
 		})
 		return
 	}
@@ -244,7 +288,7 @@ func (p *Panel) handleLogin(w http.ResponseWriter, r *http.Request) {
 		Key      string `json:"key"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "请求体解析失败"})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Неверный формат тела запроса"})
 		return
 	}
 
@@ -253,7 +297,7 @@ func (p *Panel) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if k := strings.TrimSpace(body.Key); k != "" {
 		if !matchKey(k, keys) {
 			p.recordFail(ip)
-			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "密钥无效"})
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Неверный ключ"})
 			return
 		}
 		p.clearFail(ip)
@@ -264,7 +308,7 @@ func (p *Panel) handleLogin(w http.ResponseWriter, r *http.Request) {
 	// ② 账密登录（可选后备）：只有配了密码才认，绝不"空密码即通过"。
 	if !cfg.PasswordEnabled() {
 		writeJSON(w, http.StatusBadRequest, map[string]string{
-			"error": "未启用账密登录（config.panel.password 为空），请用密钥登录"})
+			"error": "Вход по паролю отключён. Используйте ключ панели."})
 		return
 	}
 	userOK := subtle.ConstantTimeCompare(
@@ -273,7 +317,7 @@ func (p *Panel) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if !userOK || !passOK {
 		p.recordFail(ip)
 		// 不区分"用户名错"还是"密码错"：区分等于送攻击者一个用户名枚举接口。
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "用户名或密码错误"})
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Неверное имя пользователя или пароль"})
 		return
 	}
 	p.clearFail(ip)

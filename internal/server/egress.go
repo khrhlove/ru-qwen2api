@@ -79,7 +79,7 @@ func (s *Server) probeEgress(account string) {
 
 	if err != nil {
 		// 探测失败不该刷屏：只记一行，且不影响任何请求。
-		log.Printf("[qwen2api] 出口 IP 探测失败（%s）: %v", account, err)
+		log.Printf("[qwen2api] Не удалось определить исходящий IP (%s): %v", account, err)
 		return
 	}
 	s.pool.SetEgressIP(account, ip)

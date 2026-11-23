@@ -933,7 +933,7 @@ func TestVideoModelsListAliases(t *testing.T) {
 			t.Fatalf("别名参数应跟内核能力走: %v", m.Params.Modes)
 		}
 		// 🔴 必须声明「不是 doubao 模型」，否则会被当成字节的报价单。
-		if !strings.Contains(m.Notes, "不是 doubao") {
+		if !strings.Contains(m.Notes, "не модель Doubao") {
 			t.Fatalf("别名条目要说明产物来源: %s", m.Notes)
 		}
 	}

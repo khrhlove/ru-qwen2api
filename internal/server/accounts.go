@@ -48,19 +48,19 @@ func (s *Server) ImportAccounts(ctx context.Context, in []config.Account, valida
 		res.Name = name
 		switch {
 		case email == "" || !strings.Contains(email, "@"):
-			res.Error = "邮箱缺失或格式不对"
+			res.Error = "Укажите действительный адрес электронной почты"
 			results[i] = res
 			continue
 		case pw == "":
-			res.Error = "密码缺失（本仓用邮箱+密码登录，纯 token 形态请直接写进 config.json）"
+			res.Error = "Укажите пароль Qwen. Аккаунт только с токеном настраивается в config.json."
 			results[i] = res
 			continue
 		case s.pool.Has(name), used[name]:
-			res.Error = "账号名已存在（已跳过，未改动原账号）"
+			res.Error = "Аккаунт с таким названием уже существует. Его данные не изменены."
 			results[i] = res
 			continue
 		case s.poolHasEmail(email):
-			res.Error = "该邮箱已在池中（跳过）"
+			res.Error = "Аккаунт с этой почтой уже добавлен"
 			results[i] = res
 			continue
 		}
@@ -119,7 +119,7 @@ func (s *Server) ImportAccounts(ctx context.Context, in []config.Account, valida
 		}
 		if _, added := s.pool.Add(j.acc); !added {
 			results[j.idx].OK = false
-			results[j.idx].Error = "入池时发现重名"
+			results[j.idx].Error = "Название уже занято другим аккаунтом"
 			continue
 		}
 		if cp := okCreds[j.idx]; cp.access != "" {
@@ -137,10 +137,10 @@ func (s *Server) ImportAccounts(ctx context.Context, in []config.Account, valida
 	}
 	// 统一落盘一次（不是每条一次：10 条就 10 次原子写，纯浪费）。
 	if err := s.saveAccounts(); err != nil {
-		log.Printf("[qwen2api] 账号已入池但落盘失败（重启后会丢）: %v", err)
-		return results, fmt.Errorf("账号已入池，但写 %s 失败：%w", s.accountsPath(), err)
+		log.Printf("[qwen2api] Аккаунт добавлен, но не сохранён на диск: %v", err)
+		return results, fmt.Errorf("Аккаунт добавлен в память, но не удалось записать %s: %w", s.accountsPath(), err)
 	}
-	log.Printf("[qwen2api] 面板导入 %d 个账号（校验=%v），当前池 %d 个", imported, validate, s.pool.Len())
+	log.Printf("[qwen2api] Добавлено аккаунтов: %d, проверка входа: %v. Всего: %d", imported, validate, s.pool.Len())
 	return results, nil
 }
 
@@ -148,15 +148,15 @@ func (s *Server) ImportAccounts(ctx context.Context, in []config.Account, valida
 func (s *Server) DeleteAccount(name string) (bool, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
-		return false, fmt.Errorf("缺少账号名")
+		return false, fmt.Errorf("Не указано название аккаунта")
 	}
 	if !s.pool.Remove(name) {
 		return false, nil
 	}
 	if err := s.saveAccounts(); err != nil {
-		return true, fmt.Errorf("已从池中移除，但写 %s 失败：%w", s.accountsPath(), err)
+		return true, fmt.Errorf("Аккаунт удалён из памяти, но не удалось записать %s: %w", s.accountsPath(), err)
 	}
-	log.Printf("[qwen2api] 面板删除账号 %s，当前池 %d 个", name, s.pool.Len())
+	log.Printf("[qwen2api] Удалён аккаунт %s. Осталось: %d", name, s.pool.Len())
 	return true, nil
 }
 
@@ -164,17 +164,17 @@ func (s *Server) DeleteAccount(name string) (bool, error) {
 func (s *Server) TestAccount(ctx context.Context, name string) error {
 	a := s.pool.Get(name)
 	if a == nil {
-		return fmt.Errorf("账号不存在")
+		return fmt.Errorf("Аккаунт не найден")
 	}
 	if strings.TrimSpace(a.Password) == "" {
-		return fmt.Errorf("该账号没有保存密码，无法重登（token 形态请在 config.json 里更新）")
+		return fmt.Errorf("Пароль не сохранён. Если используется токен, обновите его в config.json.")
 	}
 	cctx, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
 	access, refresh, err := s.up.SignInSession(upstream.WithAccount(cctx, name), a.Email, a.Password)
 	if err != nil {
 		s.pool.MarkAuth(a, err.Error())
-		return fmt.Errorf("登录失败: %w", err)
+		return fmt.Errorf("Не удалось войти: %w", err)
 	}
 	s.pool.SetToken(name, access)
 	if refresh != "" {
@@ -197,16 +197,16 @@ func friendlySigninErr(err error) string {
 	s := err.Error()
 	switch {
 	case strings.Contains(s, "Bad_Request"), strings.Contains(s, "Unauthorized"):
-		return "邮箱或密码错误（上游拒登）"
+		return "Qwen не принял почту или пароль"
 	case strings.Contains(s, "aliyun_waf"), strings.Contains(s, "RGV587"):
-		return "被上游风控拦截（同出口连登过多，稍后再试）"
+		return "Qwen временно ограничил вход. Повторите попытку позже."
 	case strings.Contains(s, "timeout"), strings.Contains(s, "deadline"):
-		return "登录超时（网络或上游抖动）"
+		return "Время ожидания входа истекло"
 	}
 	if len(s) > 160 {
 		s = s[:160] + "…"
 	}
-	return "登录失败: " + s
+	return "Не удалось войти: " + s
 }
 
 // accountsPath 面板托管账号文件的位置。

@@ -131,11 +131,11 @@ func (s *Server) agentModelList() []ModelInfo {
 			Vision:   m.Vision,
 			Verified: true,
 			Context:  m.Context,
-			Notes: "Agent 模式：服务端自主规划并执行工具（bash / write_file 等），" +
-				"一次请求内跑完 think→tool_call→answer 整个循环；超时按更长预算放宽。" +
-				"思考原文走 reasoning_content。注意：需要澄清时上游会抛 ask_user 交互工具，" +
-				"单轮 API 无法回答（表现为一段反问文本）；产物文件不会随响应下发。" +
-				"thinking 参数对它无效（上游固定 Fast）。",
+			Notes: "В режиме агента Qwen сам планирует шаги и вызывает инструменты. " +
+				"Все шаги выполняются за один запрос с увеличенным временем ожидания. " +
+				"Рассуждение возвращается в reasoning_content. Если нужно уточнение, " +
+				"в ответе появится вопрос. Созданные файлы в ответ не включаются. " +
+				"Режим всегда быстрый; параметр thinking не применяется.",
 		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })

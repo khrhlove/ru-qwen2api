@@ -365,7 +365,7 @@ func (s *Server) handleImages(w http.ResponseWriter, r *http.Request) {
 	// 上游没有 inpaint 语义：带图时 mask 收下但不转发（文档契约）。
 	// 日志只是给我们看的；对调用方的信号在 X-Qwen2API-Warnings（见 imageWarnings）。
 	if strings.TrimSpace(req.Mask) != "" {
-		log.Printf("[qwen2api] 图片请求带了 mask，但上游无 inpaint 语义，已忽略")
+		log.Printf("[qwen2api] Маска изображения пропущена: Qwen не поддерживает редактирование по маске")
 	}
 	if strings.TrimSpace(req.Prompt) == "" {
 		entry.Status = http.StatusBadRequest
@@ -448,14 +448,14 @@ func (s *Server) handleImages(w http.ResponseWriter, r *http.Request) {
 				var perr error
 				u, polished, perr = s.polishImage(r.Context(), u)
 				if perr != nil {
-					log.Printf("[qwen2api] 图片去水印失败（该张不产出）: %v", perr)
+					log.Printf("[qwen2api] Ошибка обработки изображения, результат пропущен: %v", perr)
 					lastErr = perr
 					continue
 				}
 			} else {
 				// 明确要水印：跳过像素级后处理，原样交付上游产物（含那层 Qwen 图层）。
 				// 不转存是有意的 —— 转存一份「带水印的副本」对调用方没有额外价值。
-				log.Printf("[qwen2api] 客户端要求保留水印（watermark=true），跳过去水印")
+				log.Printf("[qwen2api] Изображение оставлено с водяным знаком по запросу клиента")
 			}
 
 			d := ImageDatum{URL: u, RevisedPrompt: revised}
@@ -465,7 +465,7 @@ func (s *Server) handleImages(w http.ResponseWriter, r *http.Request) {
 					d.URL = ""
 				} else if b64, derr := downloadAsBase64(r.Context(), u); derr != nil {
 					// 直链拿不到就退回 url —— 绝不返回空 b64 让调用方存下一堆空文件。
-					log.Printf("[qwen2api] 图片转 base64 失败（改回 url）: %v", derr)
+					log.Printf("[qwen2api] Не удалось преобразовать изображение в Base64; возвращена ссылка: %v", derr)
 				} else {
 					d.B64JSON = b64
 					d.URL = ""
@@ -631,7 +631,7 @@ func (s *Server) generateImage(ctx context.Context, model, imageModel, thinking,
 			s.coolAfterImageTimeout(a)
 			// 把整条诊断打进运行日志：文案里已含"补捞几次 + 为什么没救回来"，
 			// 而事后判断"该不该手工取回"全靠这一行。
-			log.Printf("[qwen2api] 生图超时（%s 零产物，%s），冷却 10 分钟、不重试：%v",
+			log.Printf("[qwen2api] Истекло время ожидания изображения (%s, %s); пауза 10 мин, без повтора: %v",
 				a.Name, took.Round(time.Second), err)
 			break
 		}
@@ -639,10 +639,10 @@ func (s *Server) generateImage(ctx context.Context, model, imageModel, thinking,
 			break
 		}
 		if retryableImageErr(err) {
-			log.Printf("[qwen2api] 生图账号级失败（%s: %v），换号重试", a.Name, err)
+			log.Printf("[qwen2api] Ошибка генерации изображения (%s: %v). Повтор через другой аккаунт", a.Name, err)
 		} else {
 			// 快速失败：几秒内就挂，说明没受理 —— 换号比把它甩给调用方划算。
-			log.Printf("[qwen2api] 生图快速失败（%s，%s）：换号重试", a.Name, took.Round(time.Millisecond))
+			log.Printf("[qwen2api] 生图Запрос завершился ошибкой (%s, %s). Повтор через другой аккаунт", a.Name, took.Round(time.Millisecond))
 		}
 	}
 	return nil, "", acct, chatID, err
@@ -697,7 +697,7 @@ func (s *Server) generateOnAccount(ctx context.Context, a *pool.Account,
 			// 图片帧是**原子产物**：断点之前拿到的 URL 就是可用的图，
 			// 所以先认产物、再认错误 —— 早先这里直接 return，把图一起丢了。
 			if len(imgs) > 0 {
-				log.Printf("[qwen2api] 生图流中断（%v），但已收到 %d 张产物 ⇒ 按成功返回",
+				log.Printf("[qwen2api] Поток изображений прерван (%v). Возвращено полученных изображений: %d",
 					err, len(imgs))
 				break
 			}
@@ -706,7 +706,7 @@ func (s *Server) generateOnAccount(ctx context.Context, a *pool.Account,
 			rec, tries, why := s.recoverImages(ctx, cred, chatID)
 			if len(rec) > 0 {
 				imgs = rec
-				log.Printf("[qwen2api] 生图流失败（%v），从会话历史补回 %d 张（chat=%s，补捞 %d 次）",
+				log.Printf("[qwen2api] Ошибка потока (%v). Из истории получено изображений: %d (диалог %s, попыток: %d)",
 					err, len(rec), chatID, tries)
 				break
 			}
@@ -810,12 +810,12 @@ func (s *Server) recoverImages(ctx context.Context, cred, chatID string) (imgs [
 				continue
 			}
 			// 其他读失败不值得再等：下一轮多半还是同样的错（凭据/风控/形态）。
-			log.Printf("[qwen2api] 会话历史补捞失败（chat=%s）: %v", chatID, err)
+			log.Printf("[qwen2api] Не удалось получить результат из истории диалога %s: %v", chatID, err)
 			return nil, tries, "（查询失败：" + err.Error() + "）"
 		}
 		if len(found) > 0 {
 			if attempt > 0 {
-				log.Printf("[qwen2api] 会话历史第 %d 次补捞命中（首查为空，%d 张）",
+				log.Printf("[qwen2api] История получена с попытки №%d, изображений: %d",
 					attempt+1, len(found))
 			}
 			return found, tries, ""
@@ -1002,7 +1002,7 @@ func (s *Server) handleImageEdits(w http.ResponseWriter, r *http.Request) {
 			u, polished, perr = s.polishImage(r.Context(), u)
 			if perr != nil {
 				// 失败不降级：宁可这张不产出，也不交带水印的图。
-				log.Printf("[qwen2api] edits 去水印失败（该张不产出）: %v", perr)
+				log.Printf("[qwen2api] Не удалось обработать отредактированное изображение: %v", perr)
 				lastErr = perr
 				continue
 			}

@@ -75,7 +75,7 @@ func TestConfigAPIReadOnlyWithoutPath(t *testing.T) {
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("只读时应 400，得到 %d", rec.Code)
 	}
-	if !strings.Contains(rec.Body.String(), "只能查看") {
+	if !strings.Contains(rec.Body.String(), "только для чтения") {
 		t.Fatalf("错误应说明原因: %s", rec.Body.String())
 	}
 }

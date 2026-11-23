@@ -92,7 +92,7 @@ func (s *Server) AddAPIKey(note string) (config.APIKey, error) {
 	}
 	s.keys = next
 	// 日志只出现掩码：完整 key 一旦进日志就等于泄漏（日志会被收集、被贴进 issue）。
-	log.Printf("[qwen2api] 已生成 API Key %s → %s（立即生效）", config.MaskAPIKey(k), s.keysPath)
+	log.Printf("[qwen2api] Создан ключ API %s, файл: %s. Ключ уже действует", config.MaskAPIKey(k), s.keysPath)
 	return item, nil
 }
 
@@ -100,7 +100,7 @@ func (s *Server) AddAPIKey(note string) (config.APIKey, error) {
 func (s *Server) DeleteAPIKey(key string) error {
 	key = strings.TrimSpace(key)
 	if key == "" {
-		return errors.New("key 为空")
+		return errors.New("Ключ не указан")
 	}
 
 	s.keysMu.Lock()
@@ -115,11 +115,11 @@ func (s *Server) DeleteAPIKey(key string) error {
 		}
 	}
 	if idx < 0 {
-		return errors.New("没有这把 key（可能已被撤销）")
+		return errors.New("Ключ не найден. Возможно, он уже отозван.")
 	}
 	// 🔴 绝不允许删到 0 把：那等于把前门改成"不鉴权"，任何人拿到地址就能烧账号额度。
 	if len(s.keys) <= 1 {
-		return errors.New("至少保留一把 key；确实想关闭鉴权，请删掉 apikeys.json 并把 config.api_keys 置空")
+		return errors.New("Нельзя отозвать последний ключ. Для отключения авторизации удалите apikeys.json и очистите api_keys в конфигурации.")
 	}
 
 	next := make([]config.APIKey, 0, len(s.keys)-1)
@@ -129,7 +129,7 @@ func (s *Server) DeleteAPIKey(key string) error {
 		return err
 	}
 	s.keys = next
-	log.Printf("[qwen2api] 已撤销 API Key %s（%s）", config.MaskAPIKey(key), s.keysPath)
+	log.Printf("[qwen2api] Отозван ключ API %s (%s)", config.MaskAPIKey(key), s.keysPath)
 	return nil
 }
 
@@ -138,7 +138,7 @@ func (s *Server) adoptLocked() {
 	if !s.keysInit {
 		s.keys = make([]config.APIKey, 0, len(s.conf().APIKeys))
 		for _, k := range s.conf().APIKeys {
-			s.keys = append(s.keys, config.APIKey{Key: k, Note: "来自配置文件"})
+			s.keys = append(s.keys, config.APIKey{Key: k, Note: "Из конфигурации"})
 		}
 		s.keysInit = true
 	}

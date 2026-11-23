@@ -501,6 +501,9 @@ type ToolCalls struct {
 //
 // 不配密码 = 保持老行为（只认 API Key）；配了就必须先登录才能进面板。
 type Panel struct {
+	// LocalNoAuth permits keyless panel access on loopback Host only.
+	// Keep the published port bound to 127.0.0.1 when enabling this.
+	LocalNoAuth bool `json:"local_no_auth,omitempty"`
 	// Key 面板登录密钥（自定义，任意字符串）。
 	// 命名约定：`sk-` + 服务二级域名，直接拼、不加前后缀（`qwen2api.1task.cn` → `sk-qwen2api`）。
 	//
@@ -750,6 +753,9 @@ func applyEnv(cfg *Config) {
 	// 面板密钥：容器部署时别把它写进挂载的配置文件（docker inspect 看得见）。
 	if v := os.Getenv("QWEN2API_PANEL_KEY"); v != "" {
 		cfg.Panel.Key = v
+	}
+	if v := os.Getenv("QWEN2API_PANEL_LOCAL_NO_AUTH"); v != "" {
+		cfg.Panel.LocalNoAuth = v == "1"
 	}
 	if v := os.Getenv("QWEN2API_TIMEOUT_S"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {

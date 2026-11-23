@@ -88,6 +88,10 @@ func New(b Backend) *Panel {
 
 // ServeHTTP 路由：/panel/ 静态页，/panel/api/* JSON。
 func (p *Panel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if p.b.Config().Panel.LocalNoAuth && !localPanelRequest(r) {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "Локальная панель: разрешены только запросы с этого адреса браузера"})
+		return
+	}
 	// 🔴 登录/登出/会话探测必须排在鉴权闸门**之前** —— 它们本身就是"取得凭据"的动作，
 	// 先要求凭据会形成死锁（登录永远 401，浏览器连登录框都没机会提交）。
 	if !isAuthEndpoint(r.URL.Path) && !p.authorized(r) {
@@ -179,7 +183,7 @@ func (p *Panel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		name := r.URL.Query().Get("name")
 		if name == "" || !p.b.Pool().Reset(name) {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "账号不存在"})
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Аккаунт не найден"})
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
@@ -223,15 +227,15 @@ func (p *Panel) importAccounts(w http.ResponseWriter, r *http.Request) {
 		Validate *bool            `json:"validate"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "请求体解析失败: " + err.Error()})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Неверный формат тела запроса: " + err.Error()})
 		return
 	}
 	if len(body.Accounts) == 0 {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "accounts 为空"})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Список аккаунтов пуст"})
 		return
 	}
 	if len(body.Accounts) > 500 {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "单次最多 500 个（分批导入）"})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "За один раз можно добавить до 500 аккаунтов"})
 		return
 	}
 	// 默认校验：不校验等于往池里塞哑弹（错密码的号会被选中、失败、然后冷却）。
@@ -268,7 +272,7 @@ func (p *Panel) deleteAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !ok {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "账号不存在"})
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "Аккаунт не найден"})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
@@ -299,6 +303,7 @@ func (p *Panel) overview(w http.ResponseWriter, r *http.Request) {
 		"api_keys_count":   len(keys),
 		// 只回"配没配"，不回显密钥 —— 配置页要能看出"现在靠什么登录"。
 		"panel": map[string]any{
+			"local_no_auth": cfg.Panel.LocalNoAuth,
 			"key_set":          cfg.Panel.PanelKey() != "",
 			"password_enabled": cfg.Panel.PasswordEnabled(),
 			"session_hours":    cfg.Panel.EffectiveSessionHours(),

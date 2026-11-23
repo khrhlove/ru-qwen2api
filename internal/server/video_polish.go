@@ -70,7 +70,7 @@ func (p *videoPolisher) enqueue(id string) {
 		p.mu.Lock()
 		delete(p.busy, id)
 		p.mu.Unlock()
-		log.Printf("[qwen2api] 后处理队列已满，任务 %s 推迟到下一轮巡检", id)
+		log.Printf("[qwen2api] Очередь обработки заполнена. Задача %s отложена до следующей проверки", id)
 	}
 }
 
@@ -142,11 +142,11 @@ func (p *videoPolisher) process(id string) {
 			rec.ErrMsg = "去水印/托管失败（已重试 " + strconv.Itoa(rec.PolishTries) + " 次）：" + err.Error()
 			rec.UpdatedAt = time.Now().Unix()
 			p.s.videos.Put(rec)
-			log.Printf("[qwen2api] 视频 %s 后处理失败（%d 次）：%v", rec.ID, rec.PolishTries, err)
+			log.Printf("[qwen2api] Видео %s: не удалось обработать после %d попыток: %v", rec.ID, rec.PolishTries, err)
 			return
 		}
 		p.s.videos.Put(rec)
-		log.Printf("[qwen2api] 视频 %s 后处理第 %d 次失败，稍后重试：%v",
+		log.Printf("[qwen2api] Видео %s: попытка обработки №%d не удалась, будет повтор: %v",
 			rec.ID, rec.PolishTries, err)
 		tries := rec.PolishTries
 		go func() {
@@ -162,7 +162,7 @@ func (p *videoPolisher) process(id string) {
 	rec.PolishErr = ""
 	rec.UpdatedAt = time.Now().Unix()
 	p.s.videos.Put(rec)
-	log.Printf("[qwen2api] 视频 %s 后处理完成（%s）：%s", rec.ID,
+	log.Printf("[qwen2api] Видео %s обработано (%s): %s", rec.ID,
 		time.Since(start).Round(time.Millisecond), url)
 }
 
@@ -200,7 +200,7 @@ func (p *videoPolisher) run(ctx context.Context, rec *videoRecord, st config.Sto
 		}
 		bx, by, bw, bh, measured := watermarkBox(W, H)
 		if !measured {
-			log.Printf("[qwen2api] 视频 %s 短边 %d != %d，水印框按比例外推（无实测依据）",
+			log.Printf("[qwen2api] Видео %s: размер короткой стороны %d вместо %d. Область обработки рассчитана пропорционально",
 				rec.ID, minInt(W, H), baseShort)
 		}
 		bx, by, bw, bh, err = normalizeBox(bx, by, bw, bh, W, H)

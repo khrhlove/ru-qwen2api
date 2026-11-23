@@ -12,7 +12,7 @@ services:
     environment:
       # 账号用环境变量注入，别写进镜像（QWEN2API_ACCOUNTS 是整体替换配置文件里的列表）。
       QWEN2API_API_KEYS: ${QWEN2API_API_KEYS:?Set a local API key}
-      QWEN2API_PANEL_KEY: ${QWEN2API_PANEL_KEY:?Set a local panel key}
+      QWEN2API_PANEL_LOCAL_NO_AUTH: "1"
       QWEN2API_OFFLINE: ${QWEN2API_OFFLINE:-1}
       QWEN2API_CONFIG: /app/data/config.json
       QWEN2API_LISTEN: ":8400"

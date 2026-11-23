@@ -195,7 +195,7 @@ func TestModelsListIncludesMediaModels(t *testing.T) {
 	if vid.Title != "HappyHorse 1.1" {
 		t.Fatalf("视频标题应随 root_model 生成，实际 %q", vid.Title)
 	}
-	if !strings.Contains(vid.Notes, "720P 5s=30") || !strings.Contains(vid.Notes, "1080P 15s=120") {
+	if !strings.Contains(vid.Notes, "720P, 5 с — 30") || !strings.Contains(vid.Notes, "1080P, 15 с — 120") {
 		t.Fatalf("价格说明应从 pricing 表算出来，实际 %q", vid.Notes)
 	}
 	// 文本模型不能被生成模型挤掉（上游拉不到时用内置清单兜底）。
@@ -350,10 +350,10 @@ func TestVideoModelMetaFollowsConfig(t *testing.T) {
 	if vid.Title != "HappyHorse" {
 		t.Fatalf("1.0 的标题不该写 1.1，实际 %q", vid.Title)
 	}
-	if !strings.Contains(vid.Notes, "720P 5s=40") {
+	if !strings.Contains(vid.Notes, "720P, 5 с — 40") {
 		t.Fatalf("价格说明应来自新表（40），实际 %q", vid.Notes)
 	}
-	if strings.Contains(vid.Notes, "5s=30") {
+	if strings.Contains(vid.Notes, "5 с — 30") {
 		t.Fatalf("不该残留旧表价格: %q", vid.Notes)
 	}
 }

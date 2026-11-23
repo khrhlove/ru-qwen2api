@@ -175,7 +175,7 @@ func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request) {
 			Filename: fh.Filename, Purpose: purpose, Mode: "text",
 		})
 		if truncated {
-			log.Printf("[qwen2api] 文本附件 %s 超过 %d 字节，已截断内联", fh.Filename, inlineTextLimit)
+			log.Printf("[qwen2api] Вложение %s превышает %d байт; текст сокращён", fh.Filename, inlineTextLimit)
 		}
 		return
 	}

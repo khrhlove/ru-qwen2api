@@ -500,7 +500,7 @@ func (s *Server) openUpstreamSpec(ctx context.Context, blobBase, model, gear str
 			// 只试一次 —— 再满说明这个号确实被占着，交给外层换号。
 			if !busyTried && dlg != nil && upstream.IsAgentBusy(err) {
 				busyTried = true
-				log.Printf("[qwen2api] 账号 %s 的 agent 并发槽已满，%s 后重试同号（保 cache）",
+				log.Printf("[qwen2api] Аккаунт %s: достигнут лимит одновременных запросов агента. Повтор через %s",
 					acct.Name, agentBusyBackoff)
 				time.Sleep(agentBusyBackoff)
 				continue
@@ -549,7 +549,7 @@ func (s *Server) openUpstreamSpec(ctx context.Context, blobBase, model, gear str
 			break
 		}
 		if !retrySafe {
-			log.Printf("[qwen2api] 快速失败（%s，%s）：换号重试", acct.Name, took.Round(time.Millisecond))
+			log.Printf("[qwen2api] Запрос завершился ошибкой (%s, %s). Повтор через другой аккаунт", acct.Name, took.Round(time.Millisecond))
 		}
 	}
 	return nil, openFail(lastAcct, lastErr)
@@ -824,7 +824,7 @@ func (s *Server) ensureFresh(ctx context.Context, acct *pool.Account, cred strin
 	if s.relogin(ctx, acct) {
 		return s.pool.Credential(acct.Name)
 	}
-	log.Printf("[qwen2api] 账号 %s 上传前续期失败，仍按原凭据尝试（由上游判定）", acct.Name)
+	log.Printf("[qwen2api] Аккаунт %s: обновление сессии перед загрузкой не удалось, используются прежние данные", acct.Name)
 	return cred
 }
 
@@ -883,7 +883,7 @@ func (s *Server) relogin(ctx context.Context, acct *pool.Account) bool {
 			if next != "" {
 				s.pool.SetRefresh(acct.Name, next)
 			}
-			log.Printf("[qwen2api] 账号 %s 凭据已续期（refresh_token）", acct.Name)
+			log.Printf("[qwen2api] Аккаунт %s: сессия продлена токеном обновления", acct.Name)
 			return true
 		} else {
 			// 401 = 这张票在服务端已经作废，必须当场丢掉。留着的代价是双份的：
@@ -892,7 +892,7 @@ func (s *Server) relogin(ctx context.Context, acct *pool.Account) bool {
 			// afterRefreshFailure 只对 401 生效，非 401 立即返回，不影响「上游只是
 			// 抖了一下」的场景。
 			s.afterRefreshFailure(acct.Name, err)
-			log.Printf("[qwen2api] 账号 %s refresh_token 续期失败，改用密码重登: %v", acct.Name, err)
+			log.Printf("[qwen2api] Аккаунт %s: токен не обновлён, повторяем вход по паролю: %v", acct.Name, err)
 		}
 	}
 	if acct.Email == "" || acct.Password == "" {
@@ -904,14 +904,14 @@ func (s *Server) relogin(ctx context.Context, acct *pool.Account) bool {
 	// 也正是风控画像里"账号登录地突变"的信号。
 	access, refresh, err := s.up.SignInSession(upstream.WithAccount(ctx, acct.Name), acct.Email, acct.Password)
 	if err != nil {
-		log.Printf("[qwen2api] 账号 %s 自动重登失败: %v", acct.Name, err)
+		log.Printf("[qwen2api] Аккаунт %s: не удалось повторно войти: %v", acct.Name, err)
 		return false
 	}
 	s.pool.SetToken(acct.Name, access)
 	if refresh != "" {
 		s.pool.SetRefresh(acct.Name, refresh)
 	}
-	log.Printf("[qwen2api] 账号 %s 凭据已自动续期（signin）", acct.Name)
+	log.Printf("[qwen2api] Аккаунт %s: сессия обновлена после повторного входа", acct.Name)
 	return true
 }
 
@@ -929,7 +929,7 @@ func (s *Server) noteFailure(acct *pool.Account, err error) {
 		// 过期 Bearer 会被上游伪装成 WAF 页（getstsToken 实测），这类"风控"
 		// 的真实原因是我们的凭据过期 —— 冷却只会白扔一个好号。
 		if !s.tokenFresh(acct.Name, time.Minute) {
-			log.Printf("[qwen2api] 账号 %s 报 %v，但 token 已过期 ⇒ 按凭据问题处理，不冷却",
+			log.Printf("[qwen2api] Аккаунт %s: ошибка %v при истёкшем токене; требуется обновление сессии",
 				acct.Name, err)
 			return
 		}
@@ -1020,7 +1020,7 @@ func (s *Server) serveChatStream(w http.ResponseWriter, r *http.Request, sd *ope
 		}
 		if ev.UnknownPhase != "" && !sawUnknown {
 			sawUnknown = true
-			log.Printf("[qwen2api] 上游出现未处理的 phase=%q（产物可能被丢弃，见 docs/UPSTREAM.md §4）", ev.UnknownPhase)
+			log.Printf("[qwen2api] Неизвестная фаза ответа Qwen: %q. Подробности: docs/UPSTREAM.md, раздел 4", ev.UnknownPhase)
 		}
 		if ev.ToolArgs != "" {
 			appendToolTrace(&trace, ev)
@@ -1094,7 +1094,7 @@ func (s *Server) serveChatStream(w http.ResponseWriter, r *http.Request, sd *ope
 		// 一字未出（含思考）：形态不符，必须让客户端知道，而不是回一个空回复。
 		entry.Error = upstream.ErrNoText.Error()
 		s.dialogs.drop(sd.dialogKey)
-		log.Printf("[qwen2api] 上游零文本，原始帧取证（%d 条）：%v", len(sd.stream.RawFrames()), sd.stream.RawFrames())
+		log.Printf("[qwen2api] Ответ без текста. Исходные кадры (%d): %v", len(sd.stream.RawFrames()), sd.stream.RawFrames())
 		s.writeSSE(w, flusher, ErrorBody{Error: ErrorDetail{
 			Message: "upstream returned no content, please retry later",
 			Type:    "upstream_error",
@@ -1191,7 +1191,7 @@ func (s *Server) serveChatOnce(w http.ResponseWriter, r *http.Request, sd *opene
 		}
 		if ev.UnknownPhase != "" && !sawUnknown {
 			sawUnknown = true
-			log.Printf("[qwen2api] 上游出现未处理的 phase=%q（产物可能被丢弃，见 docs/UPSTREAM.md §4）", ev.UnknownPhase)
+			log.Printf("[qwen2api] Неизвестная фаза ответа Qwen: %q. Подробности: docs/UPSTREAM.md, раздел 4", ev.UnknownPhase)
 		}
 		if ev.ToolArgs != "" {
 			appendToolTrace(&trace, ev)
@@ -1211,7 +1211,7 @@ func (s *Server) serveChatOnce(w http.ResponseWriter, r *http.Request, sd *opene
 	if content == "" && reasoning.Len() == 0 {
 		entry.Status = http.StatusBadGateway
 		entry.Error = upstream.ErrNoText.Error()
-		log.Printf("[qwen2api] 上游零文本，原始帧取证（%d 条）：%v", len(sd.stream.RawFrames()), sd.stream.RawFrames())
+		log.Printf("[qwen2api] Ответ без текста. Исходные кадры (%d): %v", len(sd.stream.RawFrames()), sd.stream.RawFrames())
 		entry.DurationMS = time.Since(start).Milliseconds()
 		s.addReq(entry)
 		writeError(w, http.StatusBadGateway, "upstream_error", upstream.ErrNoText.Error())
@@ -1337,7 +1337,7 @@ func applyUsage(entry *reqlog.Entry, u *upstream.Usage, out *Usage, estimated bo
 		// 也不是每次都带）。流水里 tok 会显示 0/0，容易被误读成"漏记" ——
 		// 记一条日志，区分"上游没给"和"我们解析丢了"。
 		if u == nil && entry != nil {
-			log.Printf("[usage-miss] %s acct=%s 上游未下发 usage，tok 记为 0", entry.Model, entry.Account)
+			log.Printf("[usage-miss] %s acct=%s Qwen не вернул статистику токенов; записано 0", entry.Model, entry.Account)
 		}
 		return
 	}

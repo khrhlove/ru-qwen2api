@@ -35,81 +35,78 @@ type Field struct {
 
 // Fields 面板可编辑字段（顺序即表单顺序）。
 var Fields = []Field{
-	{Key: "default_model", Label: "默认模型", Type: "string", Hot: true,
-		Hint: "请求没带 model 时用它"},
-	{Key: "default_thinking", Label: "默认思考档", Type: "enum",
+	{Key: "default_model", Label: "Модель по умолчанию", Type: "string", Hot: true,
+		Hint: "Используется, если клиент не передал model."},
+	{Key: "default_thinking", Label: "Режим рассуждения", Type: "enum",
 		Enum: []string{"auto", "thinking", "fast"}, Hot: true,
-		Hint: "auto = 前端默认；thinking = 强制深度思考；fast = 关闭"},
-	{Key: "expose_reasoning", Label: "透出 reasoning_content", Type: "bool", Hot: true,
-		Hint: "把上游的思考摘要放进响应，OpenAI SDK 可直接读"},
-	{Key: "image_model", Label: "图片内核模型", Type: "string", Hot: true,
-		Hint: "写进 extra.meta.model；空 = 上游默认"},
-	{Key: "image_timeout_s", Label: "生图单次超时（秒）", Type: "int", Min: 30, Max: 900, Hot: true,
-		Hint: "单次上游尝试的预算。实测出图 60s、最慢 137s；超时会换号再试一次（最坏 2×）"},
-	{Key: "model_aliases", Label: "文本模型别名", Type: "kv", Hot: true,
-		Hint: "客户端传的名字 → 上游模型名，每行一条 `旧名=新名`。" +
-			"用于上游下架模型后救急（如 qwen3.5-plus=qwen3.7-plus）；" +
-			"只在路由层生效，响应仍回显客户端原名。留空 = 不启用"},
-	{Key: "blob_base_url", Label: "图片托管公网基址", Type: "string", Hot: true,
-		Hint: "data URI/base64 图片会落到 {它}/v1/blobs/<id> 由上游来拉；必须是公网域名"},
+		Hint: "auto — автоматически, thinking — с рассуждением, fast — быстрый ответ."},
+	{Key: "expose_reasoning", Label: "Передавать рассуждение", Type: "bool", Hot: true,
+		Hint: "Добавляет reasoning_content в ответ."},
+	{Key: "image_model", Label: "Модель изображений", Type: "string", Hot: true,
+		Hint: "Пустое значение оставляет модель на выбор Qwen."},
+	{Key: "image_timeout_s", Label: "Время ожидания изображения, с", Type: "int", Min: 30, Max: 900, Hot: true,
+		Hint: "Лимит одной попытки генерации."},
+	{Key: "model_aliases", Label: "Псевдонимы текстовых моделей", Type: "kv", Hot: true,
+		Hint: "Формат: название клиента=модель Qwen, по одной паре на строку."},
+	{Key: "blob_base_url", Label: "Адрес хранилища изображений", Type: "string", Hot: true,
+		Hint: "Qwen должен иметь доступ к этому адресу, чтобы получить вложение."},
 
-	{Key: "upstream.egress_ip_url", Label: "出口 IP 探测源", Type: "string", Hot: true,
-		Hint: `纯文本回 IP 的地址（默认 https://api.ipify.org）；填 "-" 关闭探测`},
-	{Key: "upstream.timeout_s", Label: "上游超时（秒）", Type: "int", Min: 10, Max: 900, Hot: false,
-		Hint: "改完需重启（HTTP 客户端在启动时建好）"},
+	{Key: "upstream.egress_ip_url", Label: "Адрес проверки исходящего IP", Type: "string", Hot: true,
+		Hint: "Значение «-» отключает проверку."},
+	{Key: "upstream.timeout_s", Label: "Время ожидания ответа Qwen, с", Type: "int", Min: 10, Max: 900, Hot: false,
+		Hint: "Для изменения тайм-аута нужен перезапуск."},
 
-	{Key: "pool.max_rotate", Label: "单请求最多换几个号", Type: "int", Min: 1, Max: 10, Hot: true,
-		Hint: "失败换号的轮换上限；3 已能覆盖绝大多数抖动"},
-	{Key: "pool.cooldown_soft_s", Label: "软冷却（秒）", Type: "int", Min: 30, Max: 86400, Hot: true,
-		Hint: "限流/风控/抖动后的冷却时长"},
-	{Key: "pool.cooldown_auth_s", Label: "凭据失效冷却（秒）", Type: "int", Min: 60, Max: 86400, Hot: true,
-		Hint: "401/403 后的冷却时长；太短会反复撞坏号"},
-	{Key: "pool.max_inflight_per_account", Label: "单号并发上限", Type: "int", Min: 1, Max: 8, Hot: true,
-		Hint: "同一账号同时在途的请求数"},
-	{Key: "pool.max_image_per_day", Label: "单号每日出图上限", Type: "int", Min: 0, Max: 50, Hot: true,
-		Hint: "0 = 不限。打到上游硬限不会报错、只会静默挂起，所以本地先拦"},
-	{Key: "pool.max_video_per_day", Label: "单号每日视频任务数", Type: "int", Min: 0, Max: 50, Hot: true,
-		Hint: "兜底口径（未配积分单价表时生效）"},
-	{Key: "pool.max_video_credits_per_day", Label: "单号每日视频积分预算", Type: "int", Min: 0, Max: 100000, Hot: true,
-		Hint: "0 = 不启用；配了 video.pricing 才按积分算"},
-	{Key: "pool.warm_chats_per_account", Label: "每号预建会话数", Type: "int", Min: 0, Max: 5, Hot: true,
-		Hint: "0 = 关闭。实测净省约 1.2 秒/次（建会话 3.2s，命中后提交阶段会多 ~2s）"},
-	{Key: "pool.chat_pool_ttl_s", Label: "预建会话有效期（秒）", Type: "int", Min: 60, Max: 86400, Hot: true,
-		Hint: "超过就丢弃，避免用很旧的空会话去提交"},
+	{Key: "pool.max_rotate", Label: "Лимит попыток смены аккаунта", Type: "int", Min: 1, Max: 10, Hot: true,
+		Hint: "Для одного запроса."},
+	{Key: "pool.cooldown_soft_s", Label: "Пауза после ограничения, с", Type: "int", Min: 30, Max: 86400, Hot: true,
+		Hint: "После временного ограничения запросов."},
+	{Key: "pool.cooldown_auth_s", Label: "Пауза после ошибки входа, с", Type: "int", Min: 60, Max: 86400, Hot: true,
+		Hint: "После ответов 401 и 403."},
+	{Key: "pool.max_inflight_per_account", Label: "Одновременных запросов на аккаунт", Type: "int", Min: 1, Max: 8, Hot: true,
+		Hint: "Лимит запросов в работе."},
+	{Key: "pool.max_image_per_day", Label: "Изображений в день", Type: "int", Min: 0, Max: 50, Hot: true,
+		Hint: "На один аккаунт. 0 — без локального ограничения."},
+	{Key: "pool.max_video_per_day", Label: "Видеозадач в день", Type: "int", Min: 0, Max: 50, Hot: true,
+		Hint: "Используется, если не заданы цены в кредитах."},
+	{Key: "pool.max_video_credits_per_day", Label: "Кредитов на видео в день", Type: "int", Min: 0, Max: 100000, Hot: true,
+		Hint: "На один аккаунт. 0 — учитывать фактический баланс."},
+	{Key: "pool.warm_chats_per_account", Label: "Подготовленных диалогов на аккаунт", Type: "int", Min: 0, Max: 5, Hot: true,
+		Hint: "0 — не создавать диалоги заранее."},
+	{Key: "pool.chat_pool_ttl_s", Label: "Срок подготовленного диалога, с", Type: "int", Min: 60, Max: 86400, Hot: true,
+		Hint: "По истечении срока шлюз отбросит пустой диалог."},
 
 	// 预热节奏：流量变了就调这里，不用发版。改完下一轮 tick 生效。
-	{Key: "pool.keepalive.tick_s", Label: "预热轮询间隔（秒）", Type: "int", Min: 5, Max: 300, Hot: true,
-		Hint: "每轮做一次 token 续期 / 会话预建 / 连接保活。调小跟得上突发，但上游调用更密"},
-	{Key: "pool.keepalive.token_window_s", Label: "token 提前续期窗口（秒）", Type: "int", Min: 60, Max: 1800, Hot: true,
-		Hint: "access 剩余寿命小于它就开始换新；必须大于轮询间隔，否则热完就过期"},
-	{Key: "pool.keepalive.conc_factor", Label: "预热并发系数", Type: "int", Min: 1, Max: 10, Hot: true,
-		Hint: "会话/连接的覆盖范围 = 并发峰值 × 它 + 4。调大更抗突发，代价是更多空会话与保活流量"},
-	{Key: "pool.keepalive.adopt_batch", Label: "每轮补 refresh_token 数", Type: "int", Min: 1, Max: 100, Hot: true,
-		Hint: "单轮上限。真正生效的是 adopt_per_min 的分钟配额，这里只是防一次打太多"},
-	{Key: "pool.keepalive.adopt_per_min", Label: "每分钟补 refresh_token 数", Type: "int", Min: 1, Max: 60, Hot: true,
-		Hint: "密码登录是全链路最贵、最易吃风控的一步。默认 2；热池够用时根本不会触发"},
-	{Key: "pool.keepalive.parallel", Label: "预热并发数", Type: "int", Min: 1, Max: 32, Hot: true,
-		Hint: "单批次并行度。调大热得更快，但同一时刻打上游更密"},
-	{Key: "pool.keepalive.batch_max", Label: "单轮预热上限", Type: "int", Min: 4, Max: 512, Hot: true,
-		Hint: "一轮最多处理几个号。太大容易把上游打热"},
-	{Key: "pool.keepalive.target_max", Label: "预热目标上限", Type: "int", Min: 8, Max: 4096, Hot: true,
-		Hint: "按流量估算出的目标数上限。热满时间必须小于 token 的 15 分钟 TTL"},
-	{Key: "pool.keepalive.hot_rotate_s", Label: "热池轮换周期（秒）", Type: "int", Min: 0, Max: 86400, Hot: true,
-		Hint: "0 = 关闭。按周期把热池窗口推进一段，让 3000+ 个号轮流值班；换批是重叠式的（新窗口先热，旧窗口自然过期），不影响首字"},
+	{Key: "pool.keepalive.tick_s", Label: "Интервал обслуживания, с", Type: "int", Min: 5, Max: 300, Hot: true,
+		Hint: "Проверка сессий и подготовленных соединений."},
+	{Key: "pool.keepalive.token_window_s", Label: "Обновлять сессию за, с", Type: "int", Min: 60, Max: 1800, Hot: true,
+		Hint: "Укажите больше интервала обслуживания."},
+	{Key: "pool.keepalive.conc_factor", Label: "Коэффициент подготовки", Type: "int", Min: 1, Max: 10, Hot: true,
+		Hint: "Определяет число соединений по пиковой нагрузке."},
+	{Key: "pool.keepalive.adopt_batch", Label: "Обновлений токена за проход", Type: "int", Min: 1, Max: 100, Hot: true,
+		Hint: "Верхний предел для одного прохода."},
+	{Key: "pool.keepalive.adopt_per_min", Label: "Обновлений токена в минуту", Type: "int", Min: 1, Max: 60, Hot: true,
+		Hint: "Ограничивает частоту фоновых входов."},
+	{Key: "pool.keepalive.parallel", Label: "Параллельные проверки", Type: "int", Min: 1, Max: 32, Hot: true,
+		Hint: "Число одновременно обслуживаемых аккаунтов."},
+	{Key: "pool.keepalive.batch_max", Label: "Аккаунтов за проход", Type: "int", Min: 4, Max: 512, Hot: true,
+		Hint: "Верхний предел для одного цикла обслуживания."},
+	{Key: "pool.keepalive.target_max", Label: "Максимум подготовленных аккаунтов", Type: "int", Min: 8, Max: 4096, Hot: true,
+		Hint: "Верхний предел при росте нагрузки."},
+	{Key: "pool.keepalive.hot_rotate_s", Label: "Интервал смены активной группы, с", Type: "int", Min: 0, Max: 86400, Hot: true,
+		Hint: "0 — отключить плановую смену."},
 
-	{Key: "video.root_model", Label: "视频内核模型", Type: "string", Hot: true,
-		Hint: "实测 happyhorse11；改错会 Bad_Request"},
-	{Key: "video.resolution", Label: "视频默认分辨率", Type: "enum",
+	{Key: "video.root_model", Label: "Модель видео", Type: "string", Hot: true,
+		Hint: "Идентификатор модели на стороне Qwen."},
+	{Key: "video.resolution", Label: "Разрешение видео", Type: "enum",
 		Enum: []string{"720P", "1080P"}, Hot: true,
-		Hint: "请求没带 resolution 时用它；1080P 走付费积分"},
-	{Key: "video.duration", Label: "视频默认时长（秒）", Type: "int", Min: 5, Max: 15, Hot: true,
-		Hint: "请求没带 duration 时用它；上游只支持 5 / 10 / 15"},
-	{Key: "video.size", Label: "视频默认画幅", Type: "string", Hot: true,
-		Hint: "如 16:9 / 1:1 / 9:16；空 = 上游默认"},
-	{Key: "video.aliases", Label: "模型别名", Type: "kv", Hot: true,
+		Hint: "Используется, если клиент не задал разрешение."},
+	{Key: "video.duration", Label: "Длительность видео, с", Type: "int", Min: 5, Max: 15, Hot: true,
+		Hint: "Поддерживаются 5, 10 и 15 секунд."},
+	{Key: "video.size", Label: "Формат видео", Type: "string", Hot: true,
+		Hint: "Например, 16:9, 1:1 или 9:16."},
+	{Key: "video.aliases", Label: "Псевдонимы моделей видео", Type: "kv", Hot: true,
 		Enum: []string{"happyhorse11", "happyhorse", "wan27"},
-		Hint: "客户端传的模型名 → 生成内核，每行一条 `名字=内核`。" +
-			"只是路由标签：产物由本网关上游生成，与 doubao 无关。留空 = 不启用"},
+		Hint: "Формат: название клиента=модель Qwen."},
 }
 
 // fieldByKey 查字段定义。
@@ -131,62 +128,62 @@ func (f Field) Normalize(v any) (any, error) {
 		case float64:
 			n = int(x)
 			if float64(n) != x {
-				return nil, fmt.Errorf("%s 必须是整数", f.Label)
+				return nil, fmt.Errorf("%s: введите целое число", f.Label)
 			}
 		case int:
 			n = x
 		case json.Number:
 			i, err := x.Int64()
 			if err != nil {
-				return nil, fmt.Errorf("%s 必须是整数", f.Label)
+				return nil, fmt.Errorf("%s: введите целое число", f.Label)
 			}
 			n = int(i)
 		default:
-			return nil, fmt.Errorf("%s 必须是整数", f.Label)
+			return nil, fmt.Errorf("%s: введите целое число", f.Label)
 		}
 		if n < f.Min || n > f.Max {
-			return nil, fmt.Errorf("%s 超出范围 %d~%d（收到 %d）", f.Label, f.Min, f.Max, n)
+			return nil, fmt.Errorf("%s: допустимый диапазон от %d до %d, получено %d", f.Label, f.Min, f.Max, n)
 		}
 		return n, nil
 	case "bool":
 		b, ok := v.(bool)
 		if !ok {
-			return nil, fmt.Errorf("%s 必须是 true/false", f.Label)
+			return nil, fmt.Errorf("%s: выберите true или false", f.Label)
 		}
 		return b, nil
 	case "enum":
 		s, ok := v.(string)
 		if !ok {
-			return nil, fmt.Errorf("%s 必须是字符串", f.Label)
+			return nil, fmt.Errorf("%s: требуется строка", f.Label)
 		}
 		for _, e := range f.Enum {
 			if e == s {
 				return s, nil
 			}
 		}
-		return nil, fmt.Errorf("%s 只接受 %s（收到 %q）", f.Label, strings.Join(f.Enum, " / "), s)
+		return nil, fmt.Errorf("%s: допустимые значения: %s; получено %q", f.Label, strings.Join(f.Enum, " / "), s)
 	case "kv":
 		m, ok := v.(map[string]any)
 		if !ok {
-			return nil, fmt.Errorf("%s 必须是对象（每行 key=value）", f.Label)
+			return nil, fmt.Errorf("%s: укажите пары ключ=значение, по одной на строку", f.Label)
 		}
 		// 防呆：别名是「几个」的量级，200 条必然是脚本灌错了。
 		if len(m) > 200 {
-			return nil, fmt.Errorf("%s 最多 200 条（收到 %d 条）", f.Label, len(m))
+			return nil, fmt.Errorf("%s: максимум 200 записей, получено %d", f.Label, len(m))
 		}
 		out := make(map[string]string, len(m))
 		for k, val := range m {
 			key := strings.TrimSpace(k)
 			if key == "" {
-				return nil, fmt.Errorf("%s 有空键", f.Label)
+				return nil, fmt.Errorf("%s: ключ не может быть пустым", f.Label)
 			}
 			str, isStr := val.(string)
 			if !isStr {
-				return nil, fmt.Errorf("%s 的 %q 值必须是字符串", f.Label, key)
+				return nil, fmt.Errorf("%s: значение %q должно быть строкой", f.Label, key)
 			}
 			str = strings.TrimSpace(str)
 			if str == "" {
-				return nil, fmt.Errorf("%s 的 %q 没有值", f.Label, key)
+				return nil, fmt.Errorf("%s: у %q нет значения", f.Label, key)
 			}
 			if len(f.Enum) > 0 {
 				okEnum := false
@@ -197,7 +194,7 @@ func (f Field) Normalize(v any) (any, error) {
 					}
 				}
 				if !okEnum {
-					return nil, fmt.Errorf("%s 的 %q 只接受 %s（收到 %q）",
+					return nil, fmt.Errorf("%s: для %q допустимы значения %s, получено %q",
 						f.Label, key, strings.Join(f.Enum, " / "), str)
 				}
 			}
@@ -207,7 +204,7 @@ func (f Field) Normalize(v any) (any, error) {
 	default: // string
 		s, ok := v.(string)
 		if !ok {
-			return nil, fmt.Errorf("%s 必须是字符串", f.Label)
+			return nil, fmt.Errorf("%s: требуется строка", f.Label)
 		}
 		return strings.TrimSpace(s), nil
 	}
@@ -230,7 +227,7 @@ func Apply(raw map[string]any, patch map[string]any) (applied, needRestart []str
 	for _, key := range keys {
 		f, ok := fieldByKey(key)
 		if !ok {
-			return nil, nil, fmt.Errorf("不支持修改 %q（只能改面板列出的字段）", key)
+			return nil, nil, fmt.Errorf("Поле %q недоступно для изменения через панель", key)
 		}
 		val, err := f.Normalize(patch[key])
 		if err != nil {

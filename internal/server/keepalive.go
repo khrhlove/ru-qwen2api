@@ -76,7 +76,7 @@ func (s *Server) KeepAlive(ctx context.Context) {
 			return
 		}
 		if err := s.saveAccounts(); err != nil {
-			log.Printf("[qwen2api] 保存续期结果失败: %v", err)
+			log.Printf("[qwen2api] Не удалось сохранить обновлённую сессию: %v", err)
 			return
 		}
 		lastSave = time.Now()
@@ -126,7 +126,7 @@ func (s *Server) KeepAlive(ctx context.Context) {
 		case <-ctx.Done():
 			// 退出前把最后一批续期结果写掉（重启后不用重登）。
 			if err := s.saveAccounts(); err != nil {
-				log.Printf("[qwen2api] 退出前保存续期结果失败: %v", err)
+				log.Printf("[qwen2api] 退出前Не удалось сохранить обновлённую сессию: %v", err)
 			}
 			return
 		case <-time.After(s.keepaliveTick()):
@@ -149,7 +149,7 @@ func (s *Server) rotateHotPool(peak int, last *time.Time) {
 		// 热更关掉轮换时必须清窗口，否则预热永远锁在最后那批号上。
 		if s.pool.HotRotating() {
 			s.pool.ClearHotWindow()
-			log.Printf("[qwen2api] 热池轮换已关闭，回到按排序预热")
+			log.Printf("[qwen2api] Плановая смена активной группы отключена. Подготовка идёт по порядку")
 		}
 		return
 	}
@@ -164,10 +164,10 @@ func (s *Server) rotateHotPool(peak int, last *time.Time) {
 		// 环里一个"修得动"的号都没有（例如启动时整池探测失败被冷却）。
 		// 别白等一整个周期：1 分钟后重试。
 		*last = time.Now().Add(time.Duration(ka.HotRotateS)*time.Second - time.Minute)
-		log.Printf("[qwen2api] 热池轮换跳过：没有可用号（失效/无 refresh_token/额度打满），1 分钟后重试")
+		log.Printf("[qwen2api] Нет доступных аккаунтов: проверьте сессии и квоту. Повтор через минуту")
 		return
 	}
-	log.Printf("[qwen2api] 热池轮换：%d 个号进入窗口（%s … %s），旧窗口在 15 分钟内自然过期（周期 %ds）",
+	log.Printf("[qwen2api] Активная группа: %d аккаунтов (%s … %s). Прежние сессии истекут через 15 мин; период смены: %d с",
 		len(names), names[0], names[len(names)-1], ka.HotRotateS)
 }
 
@@ -261,7 +261,7 @@ func (s *Server) maintainRefresh(ctx context.Context) bool {
 		}
 	}
 	if changed {
-		log.Printf("[qwen2api] refresh_token 保养 %d 个（剩余不足 3 天）", len(names))
+		log.Printf("[qwen2api] Обновление токенов: %d (до истечения менее трёх дней)", len(names))
 	}
 	return changed
 }
@@ -294,7 +294,7 @@ func (s *Server) adoptOne(ctx context.Context, name string) bool {
 		// 挑战页，退避一轮再来才是对的。
 		if upstream.KindOf(err) == upstream.KindAuth && upstream.StatusOf(err) != 403 {
 			s.pool.MarkAuth(a, "signin: "+err.Error())
-			log.Printf("[qwen2api] 账号 %s 重登被上游永久拒绝，已停用: %v", name, err)
+			log.Printf("[qwen2api] Qwen отклонил повторный вход. Аккаунт %s отключён: %v", name, err)
 		}
 		return false
 	}
@@ -305,7 +305,7 @@ func (s *Server) adoptOne(ctx context.Context, name string) bool {
 	s.clearRefreshErr(name) // 修好了就别留着上一次的失败时间戳
 	// 成功必须留痕：否则「自愈」是静默的，出问题时分不清「还没轮到它」和
 	// 「早已修好」，只剩一条失败日志可看。
-	log.Printf("[qwen2api] 账号 %s 后台重登成功，凭据已换新", name)
+	log.Printf("[qwen2api] Аккаунт %s: фоновый вход выполнен, сессия обновлена", name)
 	return true
 }
 
@@ -469,7 +469,7 @@ func (s *Server) prewarmChats(ctx context.Context, peak int) {
 		return
 	}
 	if n := s.chats.Trim(); n > 0 {
-		log.Printf("[qwen2api] 会话池清理过期 %d 个", n)
+		log.Printf("[qwen2api] Удалено просроченных подготовленных диалогов: %d", n)
 	}
 	ka := s.conf().Pool.Keepalive.Effective()
 	// 🔴 need 用 warmTarget，不是 chatTarget（2026-11-12 线上实测修正）。
@@ -666,7 +666,7 @@ func (s *Server) refreshTokenOnly(ctx context.Context, name string) bool {
 		if len(fp) > 16 {
 			fp = fp[:8] + "…" + fp[len(fp)-6:]
 		}
-		log.Printf("[qwen2api] %s refresh 失败 rt=%s(%dB) err=%v", name, fp, len(rt), err)
+		log.Printf("[qwen2api] %s: ошибка обновления сессии, метка токена %s (%d байт): %v", name, fp, len(rt), err)
 		s.noteRefreshErr(name, err)
 		s.afterRefreshFailure(name, err)
 		return false
@@ -709,7 +709,7 @@ func (s *Server) afterRefreshFailure(name string, err error) {
 		// 却永远不被选中（lessPick 把它排最后），是最难排查的那种僵尸号。
 		if a := s.pool.Get(name); a != nil && a.Password == "" {
 			s.pool.MarkAuth(a, "refresh_token 已撤销，且未保存密码，无法重登")
-			log.Printf("[qwen2api] 账号 %s 的 refresh_token 已撤销且没有密码，已停用", name)
+			log.Printf("[qwen2api] Аккаунт %s отключён: токен обновления отозван, пароль не сохранён", name)
 			return
 		}
 		// 打上 needLogin：AdoptCandidates 会把它插到队列最前面（趁请求还没
@@ -720,7 +720,7 @@ func (s *Server) afterRefreshFailure(name string, err error) {
 		// 推迟满 5 分钟。实测 2026-11-13 17:06 一批 15 个号同时被撤销，最早的重登
 		// 尝试落在 5m21s 后、最晚 7m49s 后，这段停摆本可以只有一个 tick（20s）。
 		s.clearRefreshErr(name)
-		log.Printf("[qwen2api] 账号 %s 的 refresh_token 已失效（401），插队重登", name)
+		log.Printf("[qwen2api] Аккаунт %s: истёк токен обновления (401), запланирован повторный вход", name)
 	}
 }
 
@@ -758,7 +758,7 @@ func (s *Server) noteRefreshErr(name string, err error) {
 	}
 	s.refreshErrAt[name] = now
 	s.creditErrMu.Unlock()
-	log.Printf("[qwen2api] 账号 %s 续期失败: %v", name, err)
+	log.Printf("[qwen2api] Аккаунт %s: не удалось продлить сессию: %v", name, err)
 }
 
 // logCapacity 打印一行容量快照。

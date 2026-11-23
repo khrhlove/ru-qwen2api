@@ -173,7 +173,7 @@ func (s *Server) passThroughMedia(w http.ResponseWriter, r *http.Request, target
 		if r.Context().Err() != nil {
 			return // 客户端自己断了，没人收响应
 		}
-		log.Printf("[qwen2api] 图片透传失败 %s: %v", target, err)
+		log.Printf("[qwen2api] Не удалось получить изображение %s: %v", target, err)
 		http.Error(w, "upstream media unreachable", http.StatusBadGateway)
 		return
 	}
@@ -185,16 +185,16 @@ func (s *Server) passThroughMedia(w http.ResponseWriter, r *http.Request, target
 	case http.StatusNotFound:
 		// 两种可能：刚生成还没转存（已重试过），或链接过期（约 2 天）。
 		// 对 <img> 来说都是"没图"，但运维需要能区分，所以留一行日志。
-		log.Printf("[qwen2api] 图片已失效（404）：%s", target)
+		log.Printf("[qwen2api] Изображение больше недоступно (404): %s", target)
 		http.Error(w, "upstream image expired or not yet stored", http.StatusNotFound)
 		return
 	case http.StatusForbidden:
 		// 我们自己带对了 UA/Referer 仍被拒 ⇒ 出口 IP 被 WAF 拦，属于网关侧故障。
-		log.Printf("[qwen2api] 图片透传被上游拒绝（403）：%s", target)
+		log.Printf("[qwen2api] Qwen запретил загрузку изображения (403): %s", target)
 		http.Error(w, "upstream cdn denied this egress", http.StatusBadGateway)
 		return
 	default:
-		log.Printf("[qwen2api] 图片透传上游返回 %d：%s", resp.StatusCode, target)
+		log.Printf("[qwen2api] При загрузке изображения получен HTTP %d: %s", resp.StatusCode, target)
 		http.Error(w, "upstream media error", http.StatusBadGateway)
 		return
 	}

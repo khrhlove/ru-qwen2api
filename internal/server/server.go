@@ -138,14 +138,14 @@ func New(cfg config.Config, p *pool.Pool, up *upstream.Client, log *reqlog.Log, 
 	// 后处理队列：托管开启时起 worker。
 	if cfg.Storage.IsEnabled() {
 		s.polish = newVideoPolisher(s, cfg.Storage.Workers)
-		stdlog.Printf("[qwen2api] 视频托管已启用：%s/%s 去水印=%v 画质=%s 并发=%d",
+		stdlog.Printf("[qwen2api] Хранилище видео: %s/%s; удаление водяного знака: %v, качество: %s, параллельных задач: %d",
 			cfg.Storage.Endpoint, cfg.Storage.Bucket,
 			cfg.Storage.StripWatermark, cfg.Storage.Quality, cfg.Storage.Workers)
 	} else if miss := cfg.Storage.MissingKeys(); len(miss) > 0 && !storageExplicitlyOff(cfg.Storage) {
 		// 默认开启但凭据不全：降级而不是拒绝启动。
 		// 🔴 必须吵一句：否则运维以为在去水印，实际客户端拿到的是带水印直链。
-		stdlog.Printf("[qwen2api] ⚠️ 视频托管默认开启，但缺少配置 %v —— "+
-			"已降级为透传上游直链（成片**带水印**且 24h 过期）", miss)
+		stdlog.Printf("[qwen2api] ⚠️ Для хранилища видео не заданы параметры %v. "+
+			"Возвращаются исходные ссылки Qwen (видео с водяным знаком, срок действия 24 ч).", miss)
 	}
 	// 配置了公网基址就固定下来（服务端到服务端取图时 Host 不是公网域名）。
 	if cfg.BlobBaseURL != "" {
@@ -192,14 +192,14 @@ func (s *Server) ConfigPath() string { return s.cfgPath }
 func (s *Server) UpdateConfig(patch map[string]any) (applied, needRestart []string, err error) {
 	path := s.cfgPath
 	if path == "" {
-		return nil, nil, errors.New("未指定配置文件（启动时没给 -config），只能查看不能修改")
+		return nil, nil, errors.New("Файл настроек не задан при запуске. Параметры доступны только для чтения.")
 	}
 	raw := map[string]any{}
 	b, rerr := os.ReadFile(path)
 	switch {
 	case rerr == nil:
 		if e := json.Unmarshal(b, &raw); e != nil {
-			return nil, nil, fmt.Errorf("现有配置文件不是合法 JSON：%w", e)
+			return nil, nil, fmt.Errorf("Ошибка JSON в файле настроек: %w", e)
 		}
 	case os.IsNotExist(rerr):
 		// 文件不存在（纯环境变量部署）：从当前快照起步，写出一份完整配置。
@@ -224,7 +224,7 @@ func (s *Server) UpdateConfig(patch map[string]any) (applied, needRestart []stri
 	out = append(out, '\n')
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, out, 0o600); err != nil {
-		return nil, nil, fmt.Errorf("写临时文件失败：%w", err)
+		return nil, nil, fmt.Errorf("Не удалось записать временный файл: %w", err)
 	}
 	if err := os.Rename(tmp, path); err != nil {
 		// 🔴 容器里 config.json 常是**单文件 bind mount**（-v .../config.json:/app/config.json），
@@ -238,27 +238,27 @@ func (s *Server) UpdateConfig(patch map[string]any) (applied, needRestart []stri
 		}
 		f, e := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 		if e != nil {
-			return nil, nil, fmt.Errorf("写配置文件失败（rename 与覆盖写都失败：%v / %w）", err, e)
+			return nil, nil, fmt.Errorf("Не удалось заменить или перезаписать файл настроек: %v / %w", err, e)
 		}
 		if _, e = f.Write(out); e != nil {
 			f.Close()
-			return nil, nil, fmt.Errorf("写配置文件失败：%w", e)
+			return nil, nil, fmt.Errorf("Не удалось записать файл настроек: %w", e)
 		}
 		if e = f.Close(); e != nil {
-			return nil, nil, fmt.Errorf("写配置文件失败：%w", e)
+			return nil, nil, fmt.Errorf("Не удалось записать файл настроек: %w", e)
 		}
-		stdlog.Printf("[qwen2api] 配置文件是单文件挂载，已改用覆盖写（备份在 %s）", bak)
+		stdlog.Printf("[qwen2api] Файл настроек смонтирован отдельно и записан поверх старого. Резервная копия: %s", bak)
 	}
 
 	// 用新文件重建快照：从当前配置拷贝一份再 unmarshal —— 文件里没有的字段
 	// （accounts / 环境变量注入的项）保持原值，不会被抹成零值。
 	nc := s.conf()
 	if err := json.Unmarshal(out, &nc); err != nil {
-		return applied, needRestart, fmt.Errorf("新配置解析失败（已写入文件，重启后生效）：%w", err)
+		return applied, needRestart, fmt.Errorf("Настройки записаны, но не загружены: %w", err)
 	}
 	s.ApplyConfig(nc)
 	for _, k := range applied {
-		stdlog.Printf("[qwen2api] 配置热更 %s", k)
+		stdlog.Printf("[qwen2api] Настройка применена без перезапуска: %s", k)
 	}
 	return applied, needRestart, nil
 }

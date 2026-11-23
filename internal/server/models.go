@@ -135,7 +135,7 @@ func (c *ModelCache) List(ctx context.Context) []ModelInfo {
 			Vision:   vision,
 			Verified: true,
 			Context:  e.Info.Meta.MaxContextLength,
-			Notes:    "经 qwen2api 转发；支持 thinking 参数（auto/thinking/fast）。",
+			Notes:    "Текстовая модель. Параметр thinking задаёт режим рассуждения: автоматически, с рассуждением или быстрый ответ.",
 		})
 	}
 	return out
@@ -172,7 +172,7 @@ func (c *ModelCache) refresh(ctx context.Context) {
 			if aerr != nil {
 				// 🔴 必须打出来：这个清单决定"上游上新能不能自动发现"，静默失败
 				// 的表现就是"新模型永远不出现"，而日志里一片干净。
-				log.Printf("[qwen2api] agent 底座清单拉取失败: %v", aerr)
+				log.Printf("[qwen2api] Не удалось загрузить каталог моделей агента: %v", aerr)
 			}
 		}
 	}
@@ -184,7 +184,7 @@ func (c *ModelCache) refresh(ctx context.Context) {
 	if err != nil || len(entries) == 0 {
 		if err != nil {
 			c.lastErr = err.Error()
-			log.Printf("[qwen2api] 模型清单拉取失败: %v", err)
+			log.Printf("[qwen2api] Не удалось загрузить каталог моделей: %v", err)
 		}
 		c.expiresAt = time.Now().Add(c.ttl)
 		return

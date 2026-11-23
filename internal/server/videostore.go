@@ -117,14 +117,14 @@ func newVideoStore(path string) *videoStore {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		if !os.IsNotExist(err) {
-			log.Printf("[qwen2api] 读取视频任务记录失败（按空库启动）：%v", err)
+			log.Printf("[qwen2api] Не удалось прочитать историю видеозадач; используется пустой список: %v", err)
 		}
 		return v
 	}
 	var f videoStoreFile
 	if err := json.Unmarshal(raw, &f); err != nil {
 		// 坏文件不阻塞启动：视频是旁路能力，起不来比丢历史更糟。
-		log.Printf("[qwen2api] 视频任务记录损坏（按空库启动）：%v", err)
+		log.Printf("[qwen2api] История видеозадач повреждена; используется пустой список: %v", err)
 		return v
 	}
 	cut := time.Now().Add(-videoRecordTTL).Unix()
@@ -389,11 +389,11 @@ func (v *videoStore) flush() {
 	sort.Slice(f.Items, func(i, j int) bool { return f.Items[i].CreatedAt < f.Items[j].CreatedAt })
 	body, err := json.Marshal(&f)
 	if err != nil {
-		log.Printf("[qwen2api] 序列化视频任务记录失败：%v", err)
+		log.Printf("[qwen2api] Не удалось преобразовать историю видеозадач в JSON: %v", err)
 		return
 	}
 	if err := writeFileAtomic0600(path, body); err != nil {
-		log.Printf("[qwen2api] 写入视频任务记录失败（%s）：%v", path, err)
+		log.Printf("[qwen2api] Не удалось сохранить историю видеозадач (%s): %v", path, err)
 	}
 }
 

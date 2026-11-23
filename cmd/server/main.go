@@ -49,7 +49,7 @@ func main() {
 	if *passwd != "" {
 		h, err := config.HashPassword(*passwd)
 		if err != nil {
-			log.Fatalf("[qwen2api] 生成失败: %v", err)
+			log.Fatalf("[qwen2api] Не удалось создать хеш: %v", err)
 		}
 		fmt.Printf("把下面这段并入 config.json 的 panel（session_secret 建议另配一个随机串）：\n\n")
 		fmt.Printf("  \"panel\": {\n    \"username\": \"admin\",\n    \"password_hash\": %q,\n    \"session_hours\": 720\n  }\n\n", h)
@@ -65,7 +65,7 @@ func main() {
 
 	cfg, err := config.Load(*cfgPath)
 	if err != nil {
-		log.Fatalf("[qwen2api] 配置加载失败: %v", err)
+		log.Fatalf("[qwen2api] Не удалось загрузить настройки: %v", err)
 	}
 	if *listen != "" {
 		cfg.Listen = *listen
@@ -75,10 +75,10 @@ func main() {
 	// 规则见 internal/config/accounts.go —— 不合并是刻意的，否则"删掉的号"重启会复活。
 	accPath := config.AccountsFile(cfg.StateFile)
 	if accs, err := config.LoadAccountsOverride(accPath); err != nil {
-		log.Printf("[qwen2api] ⚠️ %v —— 本次仍用 config.json 的账号，但面板里的删除可能在重启后复活", err)
+		log.Printf("[qwen2api] ⚠️ %v. Загружены аккаунты из config.json; ранее удалённые записи могут появиться снова", err)
 	} else if accs != nil {
 		cfg.Accounts = accs
-		log.Printf("[qwen2api] 账号清单由面板托管：%s（%d 个）", accPath, len(accs))
+		log.Printf("[qwen2api] Файл аккаунтов панели: %s; записей: %d", accPath, len(accs))
 	}
 
 	// 面板托管的 API Key（apikeys.json）：同样**存在即完全接管** api_keys。
@@ -86,32 +86,32 @@ func main() {
 	keyPath := config.APIKeysFile(cfg.StateFile)
 	activeKeys := make([]config.APIKey, 0, len(cfg.APIKeys))
 	for _, k := range cfg.APIKeys {
-		activeKeys = append(activeKeys, config.APIKey{Key: k, Note: "来自配置文件"})
+		activeKeys = append(activeKeys, config.APIKey{Key: k, Note: "Из конфигурации"})
 	}
 	keysManaged := false
 	if ks, err := config.LoadAPIKeysOverride(keyPath); err != nil {
-		log.Printf("[qwen2api] ⚠️ %v —— 本次仍用 config.json 的 api_keys，但面板里撤销过的 key 可能在重启后复活", err)
+		log.Printf("[qwen2api] ⚠️ %v. Загружены ключи из config.json; ранее отозванные ключи могут снова стать действительными", err)
 	} else if ks != nil {
 		activeKeys = ks
 		keysManaged = true
-		log.Printf("[qwen2api] API Key 由面板托管：%s（%d 把）", keyPath, len(ks))
+		log.Printf("[qwen2api] Файл ключей API: %s; ключей: %d", keyPath, len(ks))
 	}
 
 	// 配置来源必须打出来。没有这一行时，"--config 没传对 / 环境变量没生效"
 	// 的表现是：服务正常启动、但账号列表和 api_keys 都是空的（静默用默认值），
 	// 排查时只能靠猜。2026-10-29 容器部署实测踩过。
 	if *cfgPath == "" {
-		log.Printf("[qwen2api] 配置来源：无配置文件，仅使用环境变量 QWEN2API_*")
+		log.Printf("[qwen2api] Файл конфигурации не задан; используются переменные QWEN2API_*")
 	} else {
-		log.Printf("[qwen2api] 配置来源：%s", *cfgPath)
+		log.Printf("[qwen2api] Настройки загружены из %s", *cfgPath)
 	}
 	if len(cfg.Accounts) == 0 {
-		log.Printf("[qwen2api] ⚠️ 未配置任何账号（config.accounts / QWEN2API_ACCOUNTS）—— " +
-			"服务会启动，但所有生成请求将返回 503（用 -config 或 QWEN2API_CONFIG 指路）")
+		log.Printf("[qwen2api] ⚠️ Аккаунты не заданы. " +
+			"Шлюз запущен, но до добавления аккаунта запросы генерации будут возвращать 503.")
 	}
 	if len(activeKeys) == 0 {
-		log.Printf("[qwen2api] ⚠️ 没有任何 API Key（config.api_keys / QWEN2API_API_KEYS / apikeys.json）—— " +
-			"前门不鉴权，请只在可信网络内暴露")
+		log.Printf("[qwen2api] ⚠️ Ключи API не заданы. " +
+			"Запросы к API не требуют авторизации.")
 	}
 
 	pool := pool.New(cfg.Pool, cfg.Accounts, cfg.StateFile)
@@ -155,7 +155,7 @@ func main() {
 		ErrorLog:          log.Default(),
 	}
 
-	log.Printf("[qwen2api] %s 启动：listen=%s accounts=%d(ready=%d) models=%s thinking=%s",
+	log.Printf("[qwen2api] %s: шлюз запущен на %s. Аккаунтов: %d, готово: %d. Модель: %s, режим: %s",
 		version, cfg.Listen, pool.Len(), pool.ReadyCount(), cfg.DefaultModel, cfg.DefaultThinking)
 
 	idle := make(chan struct{})
@@ -163,20 +163,20 @@ func main() {
 		sig := make(chan os.Signal, 1)
 		signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 		<-sig
-		log.Printf("[qwen2api] 收到退出信号，开始优雅关闭（30s）")
+		log.Printf("[qwen2api] Получен сигнал остановки. Завершаем запросы (до 30 с)")
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		if err := httpSrv.Shutdown(ctx); err != nil {
-			log.Printf("[qwen2api] 关闭异常: %v", err)
+			log.Printf("[qwen2api] Ошибка при остановке: %v", err)
 		}
 		close(idle)
 	}()
 
 	if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		log.Fatalf("[qwen2api] 监听失败: %v", err)
+		log.Fatalf("[qwen2api] Не удалось открыть порт: %v", err)
 	}
 	<-idle
-	log.Printf("[qwen2api] 已退出")
+	log.Printf("[qwen2api] Шлюз остановлен")
 }
 
 // bootstrapAccounts 并发登录/探测全部账号（有总超时，失败不影响启动）。
@@ -200,12 +200,12 @@ func bootstrapAccounts(cfg config.Config, p *pool.Pool, up *upstream.Client) {
 			if a.Token == "" {
 				cred, err := up.SignIn(upstream.WithAccount(ctx, a.Name), a.Email, a.Password)
 				if err != nil {
-					log.Printf("[qwen2api] 账号 %s 登录失败: %v", a.Name, err)
+					log.Printf("[qwen2api] Аккаунт %s: не удалось войти: %v", a.Name, err)
 					p.MarkAuth(p.Get(a.Name), err.Error())
 					return
 				}
 				p.SetToken(a.Name, cred)
-				log.Printf("[qwen2api] 账号 %s 登录成功（cookie 形态）", a.Name)
+				log.Printf("[qwen2api] Аккаунт %s: вход выполнен с использованием cookie", a.Name)
 				return
 			}
 			// 凭据自带形态前缀（cookie:/bearer:）⇒ 形态已知，**不必再探**。
@@ -217,12 +217,12 @@ func bootstrapAccounts(cfg config.Config, p *pool.Pool, up *upstream.Client) {
 			}
 			mode, err := up.DetectAuthMode(upstream.WithAccount(ctx, a.Name), a.Token)
 			if err != nil {
-				log.Printf("[qwen2api] 账号 %s 凭据探测失败: %v", a.Name, err)
+				log.Printf("[qwen2api] Аккаунт %s: не удалось определить тип сессии: %v", a.Name, err)
 				p.MarkAuth(p.Get(a.Name), err.Error())
 				return
 			}
 			p.SetAuthMode(a.Name, mode)
-			log.Printf("[qwen2api] 账号 %s 凭据形态=%s", a.Name, mode)
+			log.Printf("[qwen2api] Аккаунт %s: тип сессии — %s", a.Name, mode)
 		}(a)
 	}
 	wg.Wait()
